@@ -1,6 +1,7 @@
-import "dart:math";
+import "dart:convert";
 
 import "package:flutter/material.dart";
+import "package:http/http.dart" as http;
 import "package:juststockadmin/features/home/home_page.dart";
 
 import "../../theme.dart";
@@ -19,7 +20,9 @@ class _SignInPageState extends State<SignInPage> {
   final _otpController = TextEditingController();
 
   bool _isSending = false;
-  String? _generatedOtp;
+
+  static final Uri _requestOtpUri = Uri.parse('https://juststock.onrender.com/api/auth/admin/requestOtp');
+  static final Uri _verifyOtpUri = Uri.parse('https://juststock.onrender.com/api/auth/admin/verifyOtp');
 
   @override
   void dispose() {
@@ -31,40 +34,167 @@ class _SignInPageState extends State<SignInPage> {
 
   Future<void> _handleSendOtp() async {
     if (_isSending) return;
-    if (!_formKey.currentState!.validate()) {
+    final formState = _formKey.currentState;
+    if (formState == null || !formState.validate()) {
       return;
     }
+
+    FocusScope.of(context).unfocus();
 
     setState(() {
       _isSending = true;
     });
 
-    await Future<void>.delayed(const Duration(milliseconds: 600));
+    final name = _nameController.text.trim();
+    final phone = _buildE164Phone(_mobileController.text);
 
-    final otp = (Random().nextInt(900000) + 100000).toString();
-    _generatedOtp = otp;
-    debugPrint('OTP for ${_mobileController.text.trim()}: $otp');
+    final result = await _requestOtp(name: name, phone: phone);
 
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
 
     setState(() {
       _isSending = false;
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'OTP generated in console log. Please verify to continue.',
-        ),
+      SnackBar(
+        content: Text(result.message),
       ),
     );
 
-    await _promptForOtp();
+    if (result.success) {
+      await _promptForOtp();
+    }
+  }
+
+  Future<({bool success, String message, Map<String, dynamic>? data})> _requestOtp({
+    required String name,
+    required String phone,
+  }) async {
+    try {
+      final response = await http.post(
+        _requestOtpUri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'name': name,
+          'phone': phone,
+        }),
+      );
+
+      final decoded = _decodeBody(response.body);
+      final success =
+          decoded.success ?? (response.statusCode >= 200 && response.statusCode < 300);
+      final message = decoded.message ??
+          (success ? 'OTP sent successfully.' : 'Failed to send OTP. Please try again.');
+
+      return (success: success, message: message, data: decoded.data);
+    } catch (error, stackTrace) {
+      debugPrint('Failed to request OTP: $error');
+      debugPrint('$stackTrace');
+      return (
+        success: false,
+        message: 'Unable to send OTP. Check your connection and try again.',
+        data: null,
+      );
+    }
+  }
+
+  Future<({bool success, String message, Map<String, dynamic>? data})> _verifyOtp({
+    required String phone,
+    required String otp,
+  }) async {
+    try {
+      final response = await http.post(
+        _verifyOtpUri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'phone': phone,
+          'otp': otp,
+        }),
+      );
+
+      final decoded = _decodeBody(response.body);
+      final success =
+          decoded.success ?? (response.statusCode >= 200 && response.statusCode < 300);
+      final message = decoded.message ??
+          (success ? 'OTP verified successfully.' : 'Invalid OTP. Please try again.');
+
+      return (success: success, message: message, data: decoded.data);
+    } catch (error, stackTrace) {
+      debugPrint('Failed to verify OTP: $error');
+      debugPrint('$stackTrace');
+      return (
+        success: false,
+        message: 'Unable to verify OTP. Check your connection and try again.',
+        data: null,
+      );
+    }
+  }
+
+  ({bool? success, String? message, Map<String, dynamic>? data}) _decodeBody(String body) {
+    try {
+      final dynamic decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) {
+        bool? success;
+        final successValue = decoded['success'];
+        if (successValue is bool) {
+          success = successValue;
+        }
+        final okValue = decoded['ok'];
+        if (success == null && okValue is bool) {
+          success = okValue;
+        }
+        final statusValue = decoded['status'];
+        if (success == null && statusValue is String) {
+          final normalized = statusValue.toLowerCase();
+          if (normalized == 'success' || normalized == 'ok') {
+            success = true;
+          } else if (normalized == 'error' || normalized == 'failed' || normalized == 'failure') {
+            success = false;
+          }
+        }
+
+        String? message;
+        for (final key in ['message', 'msg', 'error', 'detail', 'status']) {
+          final value = decoded[key];
+          if (value is String && value.trim().isNotEmpty) {
+            message = value;
+            break;
+          }
+        }
+
+        return (
+          success: success,
+          message: message,
+          data: decoded,
+        );
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Failed to decode response body: $error');
+      debugPrint('$stackTrace');
+    }
+    return (success: null, message: null, data: null);
+  }
+
+  String _buildE164Phone(String input) {
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) {
+      return trimmed;
+    }
+    if (trimmed.startsWith('+')) {
+      return trimmed;
+    }
+    return '+91$trimmed';
   }
 
   Future<void> _promptForOtp() async {
     _otpController.clear();
     String? errorText;
+    String? successMessage;
+    bool isVerifying = false;
+    final phone = _buildE164Phone(_mobileController.text);
 
     final verified = await showDialog<bool>(
       context: context,
@@ -78,8 +208,8 @@ class _SignInPageState extends State<SignInPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Enter the 6-digit code printed in the console to continue.',
+                  Text(
+                    'Enter the 6-digit code sent to $phone.',
                   ),
                   const SizedBox(height: 16),
                   TextField(
@@ -97,21 +227,57 @@ class _SignInPageState extends State<SignInPage> {
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  onPressed: isVerifying ? null : () => Navigator.of(dialogContext).pop(false),
                   child: const Text('Cancel'),
                 ),
                 ElevatedButton(
-                  onPressed: () {
-                    final enteredOtp = _otpController.text.trim();
-                    if (enteredOtp == _generatedOtp) {
-                      Navigator.of(dialogContext).pop(true);
-                    } else {
-                      setLocalState(() {
-                        errorText = 'Incorrect OTP, please try again.';
-                      });
-                    }
-                  },
-                  child: const Text('Verify'),
+                  onPressed: isVerifying
+                      ? null
+                      : () async {
+                          final enteredOtp = _otpController.text.trim();
+                          if (enteredOtp.length != 6) {
+                            setLocalState(() {
+                              errorText = 'Please enter the 6-digit OTP sent to your phone.';
+                            });
+                            return;
+                          }
+
+                          setLocalState(() {
+                            isVerifying = true;
+                            errorText = null;
+                          });
+
+                          final result = await _verifyOtp(
+                            phone: phone,
+                            otp: enteredOtp,
+                          );
+
+                          setLocalState(() {
+                            isVerifying = false;
+                          });
+
+                          if (!mounted) {
+                            return;
+                          }
+
+                          if (result.success) {
+                            successMessage = result.message;
+                            Navigator.of(dialogContext).pop(true);
+                          } else {
+                            setLocalState(() {
+                              errorText = result.message;
+                            });
+                          }
+                        },
+                  child: isVerifying
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Text('Verify'),
                 ),
               ],
             );
@@ -120,11 +286,21 @@ class _SignInPageState extends State<SignInPage> {
       },
     );
 
+    if (!mounted) {
+      return;
+    }
+
     if (verified ?? false) {
+      if (successMessage != null && successMessage!.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(successMessage!),
+          ),
+        );
+      }
       _navigateToHome();
     }
   }
-
   void _navigateToHome() {
     final trimmedName = _nameController.text.trim();
     final trimmedMobile = _mobileController.text.trim();
