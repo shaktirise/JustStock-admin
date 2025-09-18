@@ -1,10 +1,12 @@
 import "dart:convert";
 
 import "package:flutter/material.dart";
+import "package:juststockadmin/core/http_client.dart" as http_client;
 import "package:http/http.dart" as http;
 import "package:juststockadmin/features/home/home_page.dart";
 
 import "../../theme.dart";
+import "package:juststockadmin/core/auth_session.dart";`nimport "package:juststockadmin/core/session_store.dart";
 
 class SignInPage extends StatefulWidget {
   const SignInPage({super.key});
@@ -74,7 +76,9 @@ class _SignInPageState extends State<SignInPage> {
     required String phone,
   }) async {
     try {
-      final response = await http.post(
+      final client = http_client.buildHttpClient();
+      try {
+        final response = await client.post(
         _requestOtpUri,
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -90,6 +94,9 @@ class _SignInPageState extends State<SignInPage> {
           (success ? 'OTP sent successfully.' : 'Failed to send OTP. Please try again.');
 
       return (success: success, message: message, data: decoded.data);
+    } finally {
+      try { client.close(); } catch (_) {}
+    }
     } catch (error, stackTrace) {
       debugPrint('Failed to request OTP: $error');
       debugPrint('$stackTrace');
@@ -106,7 +113,9 @@ class _SignInPageState extends State<SignInPage> {
     required String otp,
   }) async {
     try {
-      final response = await http.post(
+      final client = http_client.buildHttpClient();
+      try {
+        final response = await client.post(
         _verifyOtpUri,
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -122,6 +131,9 @@ class _SignInPageState extends State<SignInPage> {
           (success ? 'OTP verified successfully.' : 'Invalid OTP. Please try again.');
 
       return (success: success, message: message, data: decoded.data);
+    } finally {
+      try { client.close(); } catch (_) {}
+    }
     } catch (error, stackTrace) {
       debugPrint('Failed to verify OTP: $error');
       debugPrint('$stackTrace');
@@ -261,6 +273,21 @@ class _SignInPageState extends State<SignInPage> {
                           }
 
                           if (result.success) {
+                            final data = result.data;
+                            String? token;
+                            if (data != null) {
+                              final dynamic t1 = data['token'];
+                              final dynamic t2 = data['accessToken'];
+                              final dynamic t3 = data['access_token'];
+                              final dynamic t4 = data['jwt'];
+                              final dynamic t5 = data['sessionToken'];
+                              token = [t1, t2, t3, t4, t5]
+                                  .whereType<String>()
+                                  .firstWhere((s) => s.isNotEmpty, orElse: () => '');
+                            }
+                            if (token != null && token.isNotEmpty) {
+                              AuthSession.adminToken = token;\n                              try { await SessionStore.saveToken(token); } catch (_) {}
+                            }
                             successMessage = result.message;
                             Navigator.of(dialogContext).pop(true);
                           } else {

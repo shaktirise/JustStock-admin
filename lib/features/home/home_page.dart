@@ -1,7 +1,12 @@
+import "dart:convert";
+
 import "package:flutter/material.dart";
+import "package:juststockadmin/core/http_client.dart" as http_client;
+import "package:http/http.dart" as http;
 
 import "package:juststockadmin/features/profile/profile_page.dart";
 import "../../theme.dart";
+import "package:juststockadmin/core/auth_session.dart";
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -14,11 +19,27 @@ class HomePage extends StatefulWidget {
   final String adminMobile;
 
   static const _actions = <_DashboardAction>[
-    _DashboardAction(label: 'Nifty', icon: Icons.trending_up),
-    _DashboardAction(label: 'BankNifty', icon: Icons.account_balance),
-    _DashboardAction(label: 'Stocks', icon: Icons.insights),
-    _DashboardAction(label: 'Sensex', icon: Icons.show_chart),
-    _DashboardAction(label: 'Commodity', icon: Icons.auto_graph),
+    _DashboardAction(
+      label: 'Nifty',
+      icon: Icons.trending_up,
+      endpoint: 'nifty',
+    ),
+    _DashboardAction(
+      label: 'BankNifty',
+      icon: Icons.account_balance,
+      endpoint: 'banknifty',
+    ),
+    _DashboardAction(label: 'Stocks', icon: Icons.insights, endpoint: 'stocks'),
+    _DashboardAction(
+      label: 'Sensex',
+      icon: Icons.show_chart,
+      endpoint: 'sensex',
+    ),
+    _DashboardAction(
+      label: 'Commodity',
+      icon: Icons.auto_graph,
+      endpoint: 'commodity',
+    ),
   ];
 
   @override
@@ -27,6 +48,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   late final List<TextEditingController> _controllers;
+  bool _isSubmitting = false;
 
   @override
   void initState() {
@@ -56,17 +78,19 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  void _handleSubmit() {
-    final filledMessages = <String>[];
+  Future<void> _handleSubmit() async {
+    if (_isSubmitting) return;
+
+    final pendingMessages = <int, String>{};
     for (var index = 0; index < HomePage._actions.length; index++) {
       final message = _controllers[index].text.trim();
       if (message.isNotEmpty) {
-        filledMessages.add('${HomePage._actions[index].label}: $message');
+        pendingMessages[index] = message;
       }
     }
 
     final scaffoldMessenger = ScaffoldMessenger.of(context);
-    if (filledMessages.isEmpty) {
+    if (pendingMessages.isEmpty) {
       scaffoldMessenger.showSnackBar(
         const SnackBar(
           content: Text('Please add a message before submitting.'),
@@ -75,14 +99,129 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    scaffoldMessenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          'Submitted ${filledMessages.length} segment'
-          '${filledMessages.length == 1 ? '' : 's'} successfully.',
-        ),
-      ),
+    setState(() {
+      _isSubmitting = true;
+    });
+
+    final successfulSegments = <String>[];
+    final failedSegments = <String>[];
+
+    for (final entry in pendingMessages.entries) {
+      final index = entry.key;
+      final action = HomePage._actions[index];
+      final result = await _sendSegmentMessage(
+        endpoint: action.endpoint,
+        message: entry.value,
+      );
+
+      if (result.success) {
+        successfulSegments.add(action.label);
+        _controllers[index].clear();
+      } else {
+        failedSegments.add('${action.label}: ${result.message}');
+      }
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = false;
+    });
+
+    final feedbackMessages = <String>[];
+    if (successfulSegments.isNotEmpty) {
+      feedbackMessages.add(
+        'Sent updates for ${successfulSegments.join(', ')}.',
+      );
+    }
+    if (failedSegments.isNotEmpty) {
+      feedbackMessages.add('Failed to send: ${failedSegments.join('; ')}');
+    }
+
+    final snackMessage = feedbackMessages.join(' ');
+
+    scaffoldMessenger.showSnackBar(SnackBar(content: Text(snackMessage)));
+  }
+
+  Future<({bool success, String message})> _sendSegmentMessage({
+    required String endpoint,
+    required String message,
+  }) async {
+    final uri = Uri.parse(
+      'https://juststock.onrender.com/api/segments/$endpoint',
     );
+
+    try {
+      final client = http_client.buildHttpClient();
+      try {
+        final response = await client.post(
+        uri,
+        headers: AuthSession.withAuth({'Content-Type': 'application/json'}),
+        body: jsonEncode({'message': message}),
+      );
+
+      final decoded = _parseResponse(response.body);
+      final success =
+          decoded.success ??
+          (response.statusCode >= 200 && response.statusCode < 300);
+      final serverMessage =
+          decoded.message ??
+          (success ? 'Message sent successfully.' : 'Unable to send message.');
+
+      return (success: success, message: serverMessage);
+    } finally {
+      try { client.close(); } catch (_) {}
+    }
+    } catch (error, stackTrace) {
+      debugPrint('Failed to send segment message (' + endpoint + '): $error');
+      debugPrint('$stackTrace');
+      return (success: false, message: 'Network error. Please try again.');
+    }
+  }
+
+  ({bool? success, String? message}) _parseResponse(String body) {
+    try {
+      final dynamic decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) {
+        bool? success;
+        final successValue = decoded['success'];
+        if (successValue is bool) {
+          success = successValue;
+        }
+        final okValue = decoded['ok'];
+        if (success == null && okValue is bool) {
+          success = okValue;
+        }
+        final statusValue = decoded['status'];
+        if (success == null && statusValue is String) {
+          final normalized = statusValue.toLowerCase();
+          if (normalized == 'success' || normalized == 'ok') {
+            success = true;
+          } else if (normalized == 'error' ||
+              normalized == 'failed' ||
+              normalized == 'failure') {
+            success = false;
+          }
+        }
+
+        String? message;
+        for (final key in ['message', 'msg', 'error', 'detail', 'status']) {
+          final value = decoded[key];
+          if (value is String && value.trim().isNotEmpty) {
+            message = value;
+            break;
+          }
+        }
+
+        return (success: success, message: message);
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Failed to parse response body: $error');
+      debugPrint('$stackTrace');
+    }
+    return (success: null, message: null);
   }
 
   @override
@@ -186,8 +325,14 @@ class _HomePageState extends State<HomePage> {
             ),
             const SizedBox(height: 32),
             ElevatedButton(
-              onPressed: _handleSubmit,
-              child: const Text('Submit'),
+              onPressed: _isSubmitting ? null : () => _handleSubmit(),
+              child: _isSubmitting
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Submit'),
             ),
             const SizedBox(height: 16),
           ],
@@ -270,8 +415,13 @@ class _ActionBadge extends StatelessWidget {
 }
 
 class _DashboardAction {
-  const _DashboardAction({required this.label, required this.icon});
+  const _DashboardAction({
+    required this.label,
+    required this.icon,
+    required this.endpoint,
+  });
 
   final String label;
   final IconData icon;
+  final String endpoint;
 }
