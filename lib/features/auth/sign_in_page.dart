@@ -2,11 +2,11 @@ import "dart:convert";
 
 import "package:flutter/material.dart";
 import "package:juststockadmin/core/http_client.dart" as http_client;
-import "package:http/http.dart" as http;
 import "package:juststockadmin/features/home/home_page.dart";
 
 import "../../theme.dart";
-import "package:juststockadmin/core/auth_session.dart";`nimport "package:juststockadmin/core/session_store.dart";
+import "package:juststockadmin/core/auth_session.dart";
+import "package:juststockadmin/core/session_store.dart";
 
 class SignInPage extends StatefulWidget {
   const SignInPage({super.key});
@@ -246,6 +246,7 @@ class _SignInPageState extends State<SignInPage> {
                   onPressed: isVerifying
                       ? null
                       : () async {
+                          final navigator = Navigator.of(dialogContext);
                           final enteredOtp = _otpController.text.trim();
                           if (enteredOtp.length != 6) {
                             setLocalState(() {
@@ -286,10 +287,11 @@ class _SignInPageState extends State<SignInPage> {
                                   .firstWhere((s) => s.isNotEmpty, orElse: () => '');
                             }
                             if (token != null && token.isNotEmpty) {
-                              AuthSession.adminToken = token;\n                              try { await SessionStore.saveToken(token); } catch (_) {}
+                              AuthSession.adminToken = token;
+                              try { await SessionStore.saveToken(token); } catch (_) {}
                             }
                             successMessage = result.message;
-                            Navigator.of(dialogContext).pop(true);
+                            navigator.pop(true);
                           } else {
                             setLocalState(() {
                               errorText = result.message;
