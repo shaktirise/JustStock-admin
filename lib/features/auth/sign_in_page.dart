@@ -1,8 +1,10 @@
+import "dart:async";
 import "dart:convert";
 
 import "package:flutter/material.dart";
 import "package:juststockadmin/core/http_client.dart" as http_client;
 import "package:juststockadmin/features/home/home_page.dart";
+import "package:http/http.dart" as http;
 
 import "../../theme.dart";
 import "package:juststockadmin/core/auth_session.dart";
@@ -22,16 +24,46 @@ class _SignInPageState extends State<SignInPage> {
   final _otpController = TextEditingController();
 
   bool _isSending = false;
+  late final http.Client _httpClient;
+  Future<void>? _warmupFuture;
 
   static final Uri _requestOtpUri = Uri.parse('https://juststock.onrender.com/api/auth/admin/requestOtp');
   static final Uri _verifyOtpUri = Uri.parse('https://juststock.onrender.com/api/auth/admin/verifyOtp');
+  static final Uri _warmupUri = Uri.parse('https://juststock.onrender.com/');
+  static const Duration _requestTimeout = Duration(seconds: 20);
+
+  @override
+  void initState() {
+    super.initState();
+    _httpClient = http_client.buildHttpClient();
+    _warmupFuture = _warmupBackend();
+  }
 
   @override
   void dispose() {
     _nameController.dispose();
     _mobileController.dispose();
     _otpController.dispose();
+    try {
+      _httpClient.close();
+    } catch (_) {}
     super.dispose();
+  }
+
+  Future<void> _warmupBackend() async {
+    try {
+      await _httpClient
+          .get(
+            _warmupUri,
+            headers: const {'Cache-Control': 'no-cache'},
+          )
+          .timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      debugPrint('Warmup request timed out.');
+    } catch (error, stackTrace) {
+      debugPrint('Warmup request failed: $error');
+      debugPrint('$stackTrace');
+    }
   }
 
   Future<void> _handleSendOtp() async {
@@ -76,16 +108,21 @@ class _SignInPageState extends State<SignInPage> {
     required String phone,
   }) async {
     try {
-      final client = http_client.buildHttpClient();
-      try {
-        final response = await client.post(
-        _requestOtpUri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'name': name,
-          'phone': phone,
-        }),
-      );
+      final warmup = _warmupFuture;
+      if (warmup != null) {
+        await warmup;
+      }
+
+      final response = await _httpClient
+          .post(
+            _requestOtpUri,
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'name': name,
+              'phone': phone,
+            }),
+          )
+          .timeout(_requestTimeout);
 
       final decoded = _decodeBody(response.body);
       final success =
@@ -94,9 +131,12 @@ class _SignInPageState extends State<SignInPage> {
           (success ? 'OTP sent successfully.' : 'Failed to send OTP. Please try again.');
 
       return (success: success, message: message, data: decoded.data);
-    } finally {
-      try { client.close(); } catch (_) {}
-    }
+    } on TimeoutException {
+      return (
+        success: false,
+        message: 'Request timed out. Please try again.',
+        data: null,
+      );
     } catch (error, stackTrace) {
       debugPrint('Failed to request OTP: $error');
       debugPrint('$stackTrace');
@@ -113,16 +153,21 @@ class _SignInPageState extends State<SignInPage> {
     required String otp,
   }) async {
     try {
-      final client = http_client.buildHttpClient();
-      try {
-        final response = await client.post(
-        _verifyOtpUri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'phone': phone,
-          'otp': otp,
-        }),
-      );
+      final warmup = _warmupFuture;
+      if (warmup != null) {
+        await warmup;
+      }
+
+      final response = await _httpClient
+          .post(
+            _verifyOtpUri,
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'phone': phone,
+              'otp': otp,
+            }),
+          )
+          .timeout(_requestTimeout);
 
       final decoded = _decodeBody(response.body);
       final success =
@@ -131,9 +176,12 @@ class _SignInPageState extends State<SignInPage> {
           (success ? 'OTP verified successfully.' : 'Invalid OTP. Please try again.');
 
       return (success: success, message: message, data: decoded.data);
-    } finally {
-      try { client.close(); } catch (_) {}
-    }
+    } on TimeoutException {
+      return (
+        success: false,
+        message: 'Verification timed out. Please try again.',
+        data: null,
+      );
     } catch (error, stackTrace) {
       debugPrint('Failed to verify OTP: $error');
       debugPrint('$stackTrace');
@@ -288,7 +336,14 @@ class _SignInPageState extends State<SignInPage> {
                             }
                             if (token != null && token.isNotEmpty) {
                               AuthSession.adminToken = token;
-                              try { await SessionStore.saveToken(token); } catch (_) {}
+                              try {
+                                await SessionStore.saveToken(token);
+                                await SessionStore.saveAdminProfile(
+                                  name: _nameController.text.trim(),
+                                  mobile: _mobileController.text.trim(),
+                                );
+                                await SessionStore.touchLastActivityNow();
+                              } catch (_) {}
                             }
                             successMessage = result.message;
                             navigator.pop(true);

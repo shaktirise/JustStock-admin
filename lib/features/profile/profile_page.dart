@@ -1,4 +1,6 @@
 import "package:flutter/material.dart";
+import "package:juststockadmin/core/auth_session.dart";
+import "package:juststockadmin/core/session_store.dart";
 import "package:juststockadmin/features/auth/sign_in_page.dart";
 
 import "../../theme.dart";
@@ -86,7 +88,7 @@ class ProfilePage extends StatelessWidget {
                       'Admin Dashboard',
                       style: TextStyle(
                         fontSize: 14,
-                        color: Colors.white.withOpacity(0.85),
+                        color: Colors.white.withAlpha((0.85 * 255).round()),
                       ),
                     ),
                   ],
@@ -167,8 +169,16 @@ class ProfilePage extends StatelessWidget {
     );
   }
 
-  void _handleLogout(BuildContext context) {
-    Navigator.of(context).pushAndRemoveUntil(
+  Future<void> _handleLogout(BuildContext context) async {
+    final navigator = Navigator.of(context);
+    AuthSession.clear();
+    try {
+      await SessionStore.clear();
+    } catch (_) {}
+    if (!navigator.mounted) {
+      return;
+    }
+    navigator.pushAndRemoveUntil(
       MaterialPageRoute<void>(builder: (context) => const SignInPage()),
       (route) => false,
     );

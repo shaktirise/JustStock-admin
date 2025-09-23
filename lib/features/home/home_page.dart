@@ -1,12 +1,14 @@
 import "dart:convert";
 
 import "package:flutter/material.dart";
-import "package:juststockadmin/core/http_client.dart" as http_client;
 import "package:http/http.dart" as http;
 
-import "package:juststockadmin/features/profile/profile_page.dart";
-import "../../theme.dart";
 import "package:juststockadmin/core/auth_session.dart";
+import "package:juststockadmin/core/http_client.dart" as http_client;
+import "package:juststockadmin/core/session_store.dart";
+import "package:juststockadmin/features/profile/profile_page.dart";
+
+import "../../theme.dart";
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -29,7 +31,11 @@ class HomePage extends StatefulWidget {
       icon: Icons.account_balance,
       endpoint: 'banknifty',
     ),
-    _DashboardAction(label: 'Stocks', icon: Icons.insights, endpoint: 'stocks'),
+    _DashboardAction(
+      label: 'Stocks',
+      icon: Icons.insights,
+      endpoint: 'stocks',
+    ),
     _DashboardAction(
       label: 'Sensex',
       icon: Icons.show_chart,
@@ -47,18 +53,6 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  late final List<TextEditingController> _controllers;
-  bool _isSubmitting = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _controllers = List.generate(
-      HomePage._actions.length,
-      (_) => TextEditingController(),
-    );
-  }
-
   void _openProfile() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -70,112 +64,95 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  @override
-  void dispose() {
-    for (final controller in _controllers) {
-      controller.dispose();
-    }
-    super.dispose();
-  }
+  Future<void> _handleComposeTap(_DashboardAction action) async {
+    final message = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => _ComposeMessageSheet(action: action),
+    );
 
-  Future<void> _handleSubmit() async {
-    if (_isSubmitting) return;
-
-    final pendingMessages = <int, String>{};
-    for (var index = 0; index < HomePage._actions.length; index++) {
-      final message = _controllers[index].text.trim();
-      if (message.isNotEmpty) {
-        pendingMessages[index] = message;
-      }
-    }
-
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-    if (pendingMessages.isEmpty) {
-      scaffoldMessenger.showSnackBar(
-        const SnackBar(
-          content: Text('Please add a message before submitting.'),
-        ),
-      );
+    if (!mounted || message == null || message.trim().isEmpty) {
       return;
     }
 
-    setState(() {
-      _isSubmitting = true;
-    });
+    await _sendMessage(action: action, message: message.trim());
+  }
 
-    final successfulSegments = <String>[];
-    final failedSegments = <String>[];
+  Future<void> _sendMessage({
+    required _DashboardAction action,
+    required String message,
+  }) async {
+    final messenger = ScaffoldMessenger.of(context);
 
-    for (final entry in pendingMessages.entries) {
-      final index = entry.key;
-      final action = HomePage._actions[index];
-      final result = await _sendSegmentMessage(
-        endpoint: action.endpoint,
-        message: entry.value,
-      );
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => const Center(child: CircularProgressIndicator()),
+    );
 
-      if (result.success) {
-        successfulSegments.add(action.label);
-        _controllers[index].clear();
-      } else {
-        failedSegments.add('${action.label}: ${result.message}');
-      }
-    }
+    final result = await _sendSegmentMessage(
+      endpoint: action.endpoint,
+      message: message,
+    );
 
     if (!mounted) {
       return;
     }
 
-    setState(() {
-      _isSubmitting = false;
-    });
-
-    final feedbackMessages = <String>[];
-    if (successfulSegments.isNotEmpty) {
-      feedbackMessages.add(
-        'Sent updates for ${successfulSegments.join(', ')}.',
-      );
-    }
-    if (failedSegments.isNotEmpty) {
-      feedbackMessages.add('Failed to send: ${failedSegments.join('; ')}');
+    final rootNavigator = Navigator.of(context, rootNavigator: true);
+    if (rootNavigator.canPop()) {
+      rootNavigator.pop();
     }
 
-    final snackMessage = feedbackMessages.join(' ');
-
-    scaffoldMessenger.showSnackBar(SnackBar(content: Text(snackMessage)));
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          result.success
+              ? '${action.label} sent successfully.'
+              : result.message,
+        ),
+      ),
+    );
   }
 
   Future<({bool success, String message})> _sendSegmentMessage({
     required String endpoint,
     required String message,
   }) async {
-    final uri = Uri.parse(
-      'https://juststock.onrender.com/api/segments/$endpoint',
-    );
+    final uri = Uri.parse('https://juststock.onrender.com/api/segments/$endpoint');
 
     try {
-      final client = http_client.buildHttpClient();
+      final http.Client client = http_client.buildHttpClient();
       try {
-        final response = await client.post(
-        uri,
-        headers: AuthSession.withAuth({'Content-Type': 'application/json'}),
-        body: jsonEncode({'message': message}),
-      );
+        final http.Response response = await client.post(
+          uri,
+          headers: AuthSession.withAuth({'Content-Type': 'application/json'}),
+          body: jsonEncode({'message': message}),
+        );
 
-      final decoded = _parseResponse(response.body);
-      final success =
-          decoded.success ??
-          (response.statusCode >= 200 && response.statusCode < 300);
-      final serverMessage =
-          decoded.message ??
-          (success ? 'Message sent successfully.' : 'Unable to send message.');
+        final decoded = _parseResponse(response.body);
+        final success = decoded.success ??
+            (response.statusCode >= 200 && response.statusCode < 300);
+        final serverMessage = decoded.message ??
+            (success ? 'Message sent successfully.' : 'Unable to send message.');
 
-      return (success: success, message: serverMessage);
-    } finally {
-      try { client.close(); } catch (_) {}
-    }
+        if (success) {
+          try {
+            await SessionStore.touchLastActivityNow();
+          } catch (_) {}
+        }
+
+        return (success: success, message: serverMessage);
+      } finally {
+        try {
+          client.close();
+        } catch (_) {}
+      }
     } catch (error, stackTrace) {
-      debugPrint('Failed to send segment message (' + endpoint + '): $error');
+      debugPrint('Failed to send segment message ($endpoint): $error');
       debugPrint('$stackTrace');
       return (success: false, message: 'Network error. Please try again.');
     }
@@ -307,34 +284,23 @@ class _HomePageState extends State<HomePage> {
             ),
             const SizedBox(height: 4),
             Text(
-              'Monitor live market segments and manage investor communications.',
+              'Tap a segment icon to compose and send a message.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: Colors.grey.shade600,
               ),
             ),
             const SizedBox(height: 24),
-            ...List.generate(
-              HomePage._actions.length,
-              (index) => Padding(
-                padding: EdgeInsets.only(top: index == 0 ? 0 : 16),
-                child: _ActionMessageRow(
-                  action: HomePage._actions[index],
-                  controller: _controllers[index],
-                ),
-              ),
+            Wrap(
+              spacing: 16,
+              runSpacing: 16,
+              children: [
+                for (final action in HomePage._actions)
+                  _ActionTile(
+                    action: action,
+                    onTap: () => _handleComposeTap(action),
+                  ),
+              ],
             ),
-            const SizedBox(height: 32),
-            ElevatedButton(
-              onPressed: _isSubmitting ? null : () => _handleSubmit(),
-              child: _isSubmitting
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Submit'),
-            ),
-            const SizedBox(height: 16),
           ],
         ),
       ),
@@ -342,30 +308,120 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-class _ActionMessageRow extends StatelessWidget {
-  const _ActionMessageRow({required this.action, required this.controller});
+class _ComposeMessageSheet extends StatefulWidget {
+  const _ComposeMessageSheet({required this.action});
 
   final _DashboardAction action;
-  final TextEditingController controller;
+
+  @override
+  State<_ComposeMessageSheet> createState() => _ComposeMessageSheetState();
+}
+
+class _ComposeMessageSheetState extends State<_ComposeMessageSheet> {
+  late final TextEditingController _controller;
+  bool _showValidationError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleSubmit() {
+    final text = _controller.text.trim();
+    if (text.isEmpty) {
+      setState(() => _showValidationError = true);
+      return;
+    }
+    Navigator.of(context).pop(text);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _ActionBadge(action: action),
-        const SizedBox(width: 16),
-        Expanded(
-          child: TextField(
-            controller: controller,
-            maxLines: 3,
-            decoration: InputDecoration(
-              labelText: '${action.label} message',
-              hintText: 'Enter update for ${action.label}',
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: bottomInset + 16,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  height: 40,
+                  width: 40,
+                  decoration: BoxDecoration(
+                    gradient: buildHeaderGradient(),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(widget.action.icon, color: Colors.white),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Compose for ${widget.action.label}',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ],
             ),
-          ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _controller,
+              maxLines: 4,
+              decoration: InputDecoration(
+                labelText: '${widget.action.label} message',
+                hintText: 'Enter update for ${widget.action.label}',
+                errorText:
+                    _showValidationError ? 'Please add a message.' : null,
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _handleSubmit,
+                child: const Text('Submit'),
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
+    );
+  }
+}
+
+class _ActionTile extends StatelessWidget {
+  const _ActionTile({required this.action, required this.onTap});
+
+  final _DashboardAction action;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Open compose for ${action.label}',
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: _ActionBadge(action: action),
+        ),
+      ),
     );
   }
 }
