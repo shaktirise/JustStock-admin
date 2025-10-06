@@ -27,9 +27,9 @@ class _SignInPageState extends State<SignInPage> {
   late final http.Client _httpClient;
   Future<void>? _warmupFuture;
 
-  static final Uri _requestOtpUri = Uri.parse('https://juststock.onrender.com/api/auth/admin/requestOtp');
-  static final Uri _verifyOtpUri = Uri.parse('https://juststock.onrender.com/api/auth/admin/verifyOtp');
-  static final Uri _warmupUri = Uri.parse('https://juststock.onrender.com/');
+  static final Uri _requestOtpUri = Uri.parse('https://backend-server-11f5.onrender.com/api/auth/admin/requestOtp');
+  static final Uri _verifyOtpUri = Uri.parse('https://backend-server-11f5.onrender.com/api/auth/admin/verifyOtp');
+  static final Uri _warmupUri = Uri.parse('https://backend-server-11f5.onrender.com/');
   static const Duration _requestTimeout = Duration(seconds: 20);
 
   @override

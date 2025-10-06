@@ -7,6 +7,7 @@ import "package:juststockadmin/core/auth_session.dart";
 import "package:juststockadmin/core/http_client.dart" as http_client;
 import "package:juststockadmin/core/session_store.dart";
 import "package:juststockadmin/features/profile/profile_page.dart";
+import "package:juststockadmin/features/mlm/mlm_page.dart";
 
 import "../../theme.dart";
 
@@ -31,11 +32,7 @@ class HomePage extends StatefulWidget {
       icon: Icons.account_balance,
       endpoint: 'banknifty',
     ),
-    _DashboardAction(
-      label: 'Stocks',
-      icon: Icons.insights,
-      endpoint: 'stocks',
-    ),
+    _DashboardAction(label: 'Stocks', icon: Icons.insights, endpoint: 'stocks'),
     _DashboardAction(
       label: 'Sensex',
       icon: Icons.show_chart,
@@ -60,6 +57,14 @@ class _HomePageState extends State<HomePage> {
           adminName: widget.adminName,
           adminMobile: widget.adminMobile,
         ),
+      ),
+    );
+  }
+
+  void _openMlmPage() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => MlmPage(adminName: widget.adminName),
       ),
     );
   }
@@ -90,7 +95,8 @@ class _HomePageState extends State<HomePage> {
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (dialogContext) => const Center(child: CircularProgressIndicator()),
+      builder: (dialogContext) =>
+          const Center(child: CircularProgressIndicator()),
     );
 
     final result = await _sendSegmentMessage(
@@ -122,7 +128,9 @@ class _HomePageState extends State<HomePage> {
     required String endpoint,
     required String message,
   }) async {
-    final uri = Uri.parse('https://juststock.onrender.com/api/segments/$endpoint');
+    final uri = Uri.parse(
+      'https://backend-server-11f5.onrender.com/api/segments/$endpoint',
+    );
 
     try {
       final http.Client client = http_client.buildHttpClient();
@@ -134,10 +142,14 @@ class _HomePageState extends State<HomePage> {
         );
 
         final decoded = _parseResponse(response.body);
-        final success = decoded.success ??
+        final success =
+            decoded.success ??
             (response.statusCode >= 200 && response.statusCode < 300);
-        final serverMessage = decoded.message ??
-            (success ? 'Message sent successfully.' : 'Unable to send message.');
+        final serverMessage =
+            decoded.message ??
+            (success
+                ? 'Message sent successfully.'
+                : 'Unable to send message.');
 
         if (success) {
           try {
@@ -301,6 +313,16 @@ class _HomePageState extends State<HomePage> {
                   ),
               ],
             ),
+            const SizedBox(height: 32),
+            Text(
+              'Team growth tools',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF2C2C2C),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _MlmShortcut(onTap: _openMlmPage),
           ],
         ),
       ),
@@ -372,8 +394,8 @@ class _ComposeMessageSheetState extends State<_ComposeMessageSheet> {
                 Text(
                   'Compose for ${widget.action.label}',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
@@ -384,8 +406,9 @@ class _ComposeMessageSheetState extends State<_ComposeMessageSheet> {
               decoration: InputDecoration(
                 labelText: '${widget.action.label} message',
                 hintText: 'Enter update for ${widget.action.label}',
-                errorText:
-                    _showValidationError ? 'Please add a message.' : null,
+                errorText: _showValidationError
+                    ? 'Please add a message.'
+                    : null,
               ),
             ),
             const SizedBox(height: 12),
@@ -443,17 +466,28 @@ class _ActionBadge extends StatelessWidget {
             height: 64,
             width: 64,
             decoration: BoxDecoration(
-              gradient: buildHeaderGradient(),
+              gradient: LinearGradient(
+                colors: [
+                  theme.colorScheme.primary,
+                  theme.colorScheme.secondary,
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
               shape: BoxShape.circle,
-              boxShadow: [
+              boxShadow: const [
                 BoxShadow(
-                  color: const Color.fromRGBO(255, 152, 0, 0.25),
-                  blurRadius: 12,
-                  offset: const Offset(0, 6),
+                  color: Color.fromRGBO(255, 152, 0, 0.25),
+                  blurRadius: 14,
+                  offset: Offset(0, 8),
                 ),
               ],
             ),
-            child: Icon(action.icon, color: Colors.white, size: 28),
+            child: Icon(
+              action.icon,
+              color: theme.colorScheme.onPrimary,
+              size: 28,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
@@ -465,6 +499,81 @@ class _ActionBadge extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _MlmShortcut extends StatelessWidget {
+  const _MlmShortcut({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
+      child: Ink(
+        decoration: BoxDecoration(
+          gradient: buildHeaderGradient(),
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: const [
+            BoxShadow(
+              color: Color.fromRGBO(255, 152, 0, 0.25),
+              blurRadius: 20,
+              offset: Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.account_tree_rounded,
+                  color: Color(0xFFFF8F00),
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'MLM Levels',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'View level progress and open each layer in a dropdown tree.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.white70,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
