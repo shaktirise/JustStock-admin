@@ -477,7 +477,7 @@ class _ActionBadge extends StatelessWidget {
               shape: BoxShape.circle,
               boxShadow: const [
                 BoxShadow(
-                  color: Color.fromRGBO(255, 152, 0, 0.25),
+                  color: Color.fromRGBO(139, 0, 0, 0.25),
                   blurRadius: 14,
                   offset: Offset(0, 8),
                 ),
@@ -518,14 +518,14 @@ class _MlmShortcut extends StatelessWidget {
       child: Ink(
         decoration: BoxDecoration(
           gradient: buildHeaderGradient(),
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: const [
-            BoxShadow(
-              color: Color.fromRGBO(255, 152, 0, 0.25),
-              blurRadius: 20,
-              offset: Offset(0, 10),
-            ),
-          ],
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: const [
+          BoxShadow(
+            color: Color.fromRGBO(139, 0, 0, 0.25),
+            blurRadius: 20,
+            offset: Offset(0, 10),
+          ),
+        ],
         ),
         child: Padding(
           padding: const EdgeInsets.all(20),
@@ -533,13 +533,13 @@ class _MlmShortcut extends StatelessWidget {
             children: [
               Container(
                 padding: const EdgeInsets.all(12),
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   color: Colors.white,
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
                   Icons.account_tree_rounded,
-                  color: Color(0xFFFF8F00),
+                  color: theme.colorScheme.secondary,
                   size: 28,
                 ),
               ),

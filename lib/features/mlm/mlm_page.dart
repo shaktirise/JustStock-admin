@@ -159,7 +159,7 @@ class _MlmSummaryCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         boxShadow: const [
           BoxShadow(
-            color: Color.fromRGBO(255, 152, 0, 0.28),
+            color: Color.fromRGBO(139, 0, 0, 0.28),
             blurRadius: 24,
             offset: Offset(0, 12),
           ),
@@ -230,13 +230,13 @@ class _MlmSummaryCard extends StatelessWidget {
                   value: '$downlineSize',
                 ),
                 const SizedBox(height: 16),
-                Text(
-                  milestone,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFF8E6100),
-                    height: 1.4,
-                  ),
-                ),
+        Text(
+          milestone,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.secondary,
+            height: 1.4,
+          ),
+        ),
               ],
             ),
           ),
@@ -280,14 +280,14 @@ class _SummaryStatRow extends StatelessWidget {
                 label,
                 style: theme.textTheme.labelLarge?.copyWith(
                   fontWeight: FontWeight.w600,
-                  color: const Color(0xFF8E6100),
+                  color: theme.colorScheme.secondary,
                 ),
               ),
               Text(
                 value,
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w700,
-                  color: const Color(0xFF3C3C3C),
+                  color: theme.colorScheme.onSurface,
                 ),
               ),
             ],
@@ -309,8 +309,9 @@ class _MlmMemberBranch extends StatelessWidget {
     final theme = Theme.of(context);
     final isRoot = depth == 0;
     final level = calculateMemberLevel(member);
-    final textColor = isRoot ? Colors.white : const Color(0xFF3C3C3C);
-    final iconColor = isRoot ? Colors.white : const Color(0xFFFF8F00);
+    final accentColor = theme.colorScheme.secondary;
+    final textColor = isRoot ? Colors.white : theme.colorScheme.onSurface;
+    final iconColor = isRoot ? Colors.white : accentColor;
 
     final screenWidth = MediaQuery.of(context).size.width;
     final isCompactDevice = screenWidth < 360;
@@ -334,7 +335,7 @@ class _MlmMemberBranch extends StatelessWidget {
         borderRadius: BorderRadius.circular(isRoot ? 24 : 18),
         boxShadow: const [
           BoxShadow(
-            color: Color.fromRGBO(255, 152, 0, 0.18),
+            color: Color.fromRGBO(139, 0, 0, 0.18),
             blurRadius: 16,
             offset: Offset(0, 10),
           ),
@@ -420,6 +421,7 @@ class _MemberHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final accentColor = theme.colorScheme.secondary;
     final trimmed = member.name.trim();
     final initial = trimmed.isEmpty ? '?' : trimmed[0].toUpperCase();
     final levelLabel = level == 0 ? 'Not qualified' : 'Level $level';
@@ -429,14 +431,14 @@ class _MemberHeader extends StatelessWidget {
       decoration: BoxDecoration(
         color: isRoot
             ? Colors.white.withValues(alpha: 0.22)
-            : const Color(0xFFFFF3CD),
+            : accentColor.withOpacity(0.12),
         borderRadius: BorderRadius.circular(30),
       ),
       child: Text(
         levelLabel,
         style: theme.textTheme.labelMedium?.copyWith(
           fontWeight: FontWeight.w600,
-          color: isRoot ? Colors.white : const Color(0xFF8E6100),
+          color: isRoot ? Colors.white : accentColor,
         ),
       ),
     );
@@ -466,11 +468,11 @@ class _MemberHeader extends StatelessWidget {
       radius: 22,
       backgroundColor: isRoot
           ? Colors.white.withValues(alpha: 0.25)
-          : const Color(0xFFFFECB3),
+          : accentColor.withOpacity(0.12),
       child: Text(
         initial,
         style: theme.textTheme.titleMedium?.copyWith(
-          color: isRoot ? Colors.white : const Color(0xFFFF8F00),
+          color: isRoot ? Colors.white : accentColor,
           fontWeight: FontWeight.w700,
         ),
       ),
@@ -522,7 +524,7 @@ class _ReferralBadges extends StatelessWidget {
           'Direct team',
           style: theme.textTheme.labelLarge?.copyWith(
             fontWeight: FontWeight.w600,
-            color: const Color(0xFF8E6100),
+            color: theme.colorScheme.secondary,
           ),
         ),
         const SizedBox(height: 8),
@@ -545,26 +547,28 @@ class _ReferralChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accentColor = theme.colorScheme.secondary;
     final level = calculateMemberLevel(member);
     final trimmed = member.name.trim();
     final initials = trimmed.isEmpty ? '?' : trimmed[0].toUpperCase();
 
     return Chip(
-      backgroundColor: const Color(0xFFFFF8E1),
+      backgroundColor: accentColor.withOpacity(0.08),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       avatar: CircleAvatar(
-        backgroundColor: const Color(0xFFFFECB3),
+        backgroundColor: accentColor.withOpacity(0.16),
         child: Text(
           initials,
-          style: const TextStyle(
+          style: TextStyle(
             fontWeight: FontWeight.w700,
-            color: Color(0xFFFF8F00),
+            color: accentColor,
           ),
         ),
       ),
-      label: Text('${member.name} Â· L$level'),
-      labelStyle: const TextStyle(
-        color: Color(0xFF8E6100),
+      label: Text('${member.name} L$level'),
+      labelStyle: TextStyle(
+        color: accentColor,
         fontWeight: FontWeight.w600,
       ),
     );
@@ -583,19 +587,19 @@ class _MilestoneBanner extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF3CD),
+        color: theme.colorScheme.secondary.withOpacity(0.1),
         borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.flag_rounded, color: Color(0xFFFF8F00)),
+          Icon(Icons.flag_rounded, color: theme.colorScheme.secondary),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
               message,
               style: theme.textTheme.bodySmall?.copyWith(
-                color: const Color(0xFF8E6100),
+                color: theme.colorScheme.secondary,
                 height: 1.4,
               ),
             ),
@@ -661,3 +665,6 @@ String buildNextMilestoneText(MlmMember member) {
   final names = lacking.map((referral) => referral.name).join(', ');
   return '${member.name} needs $names to reach Level $targetLevel to unlock Level ${currentLevel + 1}.';
 }
+
+
+

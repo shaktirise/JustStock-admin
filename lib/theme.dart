@@ -1,20 +1,20 @@
-﻿import "package:flutter/material.dart";
+import "package:flutter/material.dart";
 
-const Color _primaryYellow = Color(0xFFFFC107);
-const Color _sunsetOrange = Color(0xFFFF8F00);
-const Color _softBackground = Color(0xFFFEF9E6);
+const Color _primaryMaroon = Color(0xFF8B0000);
+const Color _deepCrimson = Color(0xFFB22222);
+const Color _softBackground = Color(0xFFF9F4F4);
 
 ThemeData buildAppTheme() {
   final base = ThemeData.light(useMaterial3: false);
   return base.copyWith(
     scaffoldBackgroundColor: _softBackground,
     colorScheme: base.colorScheme.copyWith(
-      primary: _primaryYellow,
-      secondary: _sunsetOrange,
+      primary: _primaryMaroon,
+      secondary: _deepCrimson,
       surface: Colors.white,
       onPrimary: Colors.white,
       onSecondary: Colors.white,
-      onSurface: const Color(0xFF212121),
+      onSurface: const Color(0xFF1F1B1B),
     ),
     appBarTheme: const AppBarTheme(
       backgroundColor: Colors.transparent,
@@ -28,12 +28,18 @@ ThemeData buildAppTheme() {
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
-        backgroundColor: _primaryYellow,
-        foregroundColor: const Color(0xFF212121),
+        backgroundColor: _primaryMaroon,
+        foregroundColor: Colors.white,
         elevation: 0,
         minimumSize: const Size.fromHeight(52),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+      ),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        backgroundColor: _deepCrimson,
+        foregroundColor: Colors.white,
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
@@ -47,15 +53,15 @@ ThemeData buildAppTheme() {
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
     ),
     textTheme: base.textTheme.apply(
-      bodyColor: const Color(0xFF3C3C3C),
-      displayColor: const Color(0xFF3C3C3C),
+      bodyColor: const Color(0xFF312A2A),
+      displayColor: const Color(0xFF312A2A),
     ),
   );
 }
 
 LinearGradient buildHeaderGradient() {
   return const LinearGradient(
-    colors: [_primaryYellow, _sunsetOrange],
+    colors: [_primaryMaroon, _deepCrimson],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
@@ -63,7 +69,7 @@ LinearGradient buildHeaderGradient() {
 
 LinearGradient buildCardGradient() {
   return const LinearGradient(
-    colors: [Color(0xFFFFF3CD), Colors.white],
+    colors: [Color(0xFFFFEBEB), Colors.white],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
