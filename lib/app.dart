@@ -66,10 +66,10 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
     } catch (_) {}
 
     final savedName = (await SessionStore.loadAdminName()) ?? '';
-    final savedMobile = (await SessionStore.loadAdminMobile()) ?? '';
+    final savedEmail = (await SessionStore.loadAdminEmail()) ?? '';
 
     if (!mounted) return;
-    _goTo(HomePage(adminName: savedName, adminMobile: savedMobile));
+    _goTo(HomePage(adminName: savedName, adminEmail: savedEmail));
   }
 
   void _goTo(Widget page) {

@@ -12,11 +12,11 @@ class ProfilePage extends StatelessWidget {
   const ProfilePage({
     super.key,
     required this.adminName,
-    required this.adminMobile,
+    required this.adminEmail,
   });
 
   final String adminName;
-  final String adminMobile;
+  final String adminEmail;
 
   @override
   Widget build(BuildContext context) {
@@ -24,9 +24,9 @@ class ProfilePage extends StatelessWidget {
     final trimmedName = adminName.trim();
     final displayName = trimmedName.isEmpty ? 'Admin' : trimmedName;
     final initial = displayName[0].toUpperCase();
-    final mobileLabel = adminMobile.trim().isEmpty
+    final emailLabel = adminEmail.trim().isEmpty
         ? 'Not provided'
-        : adminMobile.trim();
+        : adminEmail.trim();
     final quickActionGradient = buildHeaderGradient();
     final quickActions = [
       _ProfileQuickAction(
@@ -140,23 +140,23 @@ class ProfilePage extends StatelessWidget {
                           gradient: buildHeaderGradient(),
                         ),
                         child: const Icon(
-                          Icons.phone_rounded,
-                          color: Colors.white,
-                        ),
+                            Icons.email_outlined,
+                            color: Colors.white,
+                          ),
                       ),
                       const SizedBox(width: 16),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Mobile number',
-                            style: theme.textTheme.labelLarge?.copyWith(
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                              'Email address',
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            mobileLabel,
+                            const SizedBox(height: 4),
+                            Text(
+                              emailLabel,
                             style: theme.textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.w600,
                             ),

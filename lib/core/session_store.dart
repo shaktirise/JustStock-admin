@@ -3,7 +3,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 class SessionStore {
   static const _tokenKey = 'admin_token';
   static const _nameKey = 'admin_name';
-  static const _mobileKey = 'admin_mobile';
+  static const _emailKey = 'admin_email';
+  static const _legacyMobileKey = 'admin_mobile';
   static const _lastActivityKey = 'last_activity_ms';
 
   static Future<void> saveToken(String token) async {
@@ -18,11 +19,12 @@ class SessionStore {
 
   static Future<void> saveAdminProfile({
     required String name,
-    required String mobile,
+    required String email,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_nameKey, name);
-    await prefs.setString(_mobileKey, mobile);
+    await prefs.setString(_emailKey, email);
+    await prefs.remove(_legacyMobileKey);
   }
 
   static Future<String?> loadAdminName() async {
@@ -30,9 +32,10 @@ class SessionStore {
     return prefs.getString(_nameKey);
   }
 
-  static Future<String?> loadAdminMobile() async {
+  static Future<String?> loadAdminEmail() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_mobileKey);
+    return prefs.getString(_emailKey) ??
+        prefs.getString(_legacyMobileKey);
   }
 
   static Future<void> touchLastActivityNow() async {
@@ -49,7 +52,8 @@ class SessionStore {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_tokenKey);
     await prefs.remove(_nameKey);
-    await prefs.remove(_mobileKey);
+    await prefs.remove(_emailKey);
+    await prefs.remove(_legacyMobileKey);
     await prefs.remove(_lastActivityKey);
   }
 }

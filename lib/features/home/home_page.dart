@@ -15,11 +15,11 @@ class HomePage extends StatefulWidget {
   const HomePage({
     super.key,
     required this.adminName,
-    required this.adminMobile,
+    required this.adminEmail,
   });
 
   final String adminName;
-  final String adminMobile;
+  final String adminEmail;
 
   static const _actions = <_DashboardAction>[
     _DashboardAction(
@@ -55,7 +55,7 @@ class _HomePageState extends State<HomePage> {
       MaterialPageRoute<void>(
         builder: (context) => ProfilePage(
           adminName: widget.adminName,
-          adminMobile: widget.adminMobile,
+          adminEmail: widget.adminEmail,
         ),
       ),
     );

@@ -3,33 +3,32 @@ import "dart:convert";
 
 import "package:flutter/material.dart";
 import "package:http/http.dart" as http;
-import "package:juststockadmin/core/auth_session.dart";
 import "package:juststockadmin/core/http_client.dart" as http_client;
-import "package:juststockadmin/core/session_store.dart";
-import "package:juststockadmin/features/home/home_page.dart";
 
 import "../../theme.dart";
-import "sign_up_page.dart";
 
-class SignInPage extends StatefulWidget {
-  const SignInPage({super.key});
+class SignUpPage extends StatefulWidget {
+  const SignUpPage({super.key});
 
   @override
-  State<SignInPage> createState() => _SignInPageState();
+  State<SignUpPage> createState() => _SignUpPageState();
 }
 
-class _SignInPageState extends State<SignInPage> {
+class _SignUpPageState extends State<SignUpPage> {
   final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
 
-  bool _obscurePassword = true;
   bool _isSubmitting = false;
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
   late final http.Client _httpClient;
   Future<void>? _warmupFuture;
 
-  static final Uri _loginUri = Uri.parse(
-    "https://backend-server-11f5.onrender.com/api/auth/admin/login",
+  static final Uri _signupUri = Uri.parse(
+    "https://backend-server-11f5.onrender.com/api/auth/admin/signup",
   );
   static final Uri _warmupUri = Uri.parse(
     "https://backend-server-11f5.onrender.com/",
@@ -45,8 +44,10 @@ class _SignInPageState extends State<SignInPage> {
 
   @override
   void dispose() {
+    _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     try {
       _httpClient.close();
     } catch (_) {}
@@ -69,7 +70,7 @@ class _SignInPageState extends State<SignInPage> {
     }
   }
 
-  Future<void> _handleSignIn() async {
+  Future<void> _handleSignUp() async {
     if (_isSubmitting) return;
     final formState = _formKey.currentState;
     if (formState == null || !formState.validate()) {
@@ -82,8 +83,10 @@ class _SignInPageState extends State<SignInPage> {
       _isSubmitting = true;
     });
 
+    final name = _nameController.text.trim();
     final email = _emailController.text.trim();
     final password = _passwordController.text;
+    final confirmPassword = _confirmPasswordController.text;
 
     final messenger = ScaffoldMessenger.of(context);
 
@@ -95,11 +98,13 @@ class _SignInPageState extends State<SignInPage> {
 
       final response = await _httpClient
           .post(
-            _loginUri,
+            _signupUri,
             headers: const {"Content-Type": "application/json"},
             body: jsonEncode({
+              "name": name,
               "email": email,
               "password": password,
+              "confirmPassword": confirmPassword,
             }),
           )
           .timeout(_requestTimeout);
@@ -109,59 +114,25 @@ class _SignInPageState extends State<SignInPage> {
       final decoded = _decodeBody(response.body);
       final isSuccess = response.statusCode >= 200 && response.statusCode < 300;
       final message = _extractMessage(decoded) ??
-          (isSuccess ? "Login successful." : "Unable to sign in.");
+          (isSuccess
+              ? "Account created successfully. Sign in to continue."
+              : "Unable to create account.");
 
       if (!isSuccess) {
         messenger.showSnackBar(SnackBar(content: Text(message)));
         return;
       }
 
-      final token = _extractToken(decoded);
-      if (token == null || token.isEmpty) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text("Missing token in response.")),
-        );
-        return;
-      }
-
-      final nameFromApi = _extractAdminName(decoded);
-      final resolvedName =
-          nameFromApi ?? email.split("@").first.trim().replaceAll(".", " ");
-
-      AuthSession.adminToken = token;
-      try {
-        await SessionStore.saveToken(token);
-        await SessionStore.saveAdminProfile(
-          name: resolvedName,
-          email: email,
-        );
-        await SessionStore.touchLastActivityNow();
-      } catch (error, stackTrace) {
-        debugPrint("Failed to persist session: $error");
-        debugPrint("$stackTrace");
-      }
-
-      if (!mounted) return;
-
-      messenger.showSnackBar(SnackBar(content: Text(message)));
-
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(
-          builder: (_) => HomePage(
-            adminName: resolvedName,
-            adminEmail: email,
-          ),
-        ),
-      );
+      Navigator.of(context).pop((email: email, message: message));
     } on TimeoutException {
       messenger.showSnackBar(
-        const SnackBar(content: Text("Login timed out. Try again.")),
+        const SnackBar(content: Text("Signup timed out. Try again.")),
       );
     } catch (error, stackTrace) {
-      debugPrint("Login failed: $error");
+      debugPrint("Signup failed: $error");
       debugPrint("$stackTrace");
       messenger.showSnackBar(
-        SnackBar(content: Text("Login failed: $error")),
+        SnackBar(content: Text("Signup failed: $error")),
       );
     } finally {
       if (mounted) {
@@ -180,7 +151,7 @@ class _SignInPageState extends State<SignInPage> {
         return decoded;
       }
     } catch (error, stackTrace) {
-      debugPrint("Failed to decode login response: $error");
+      debugPrint("Failed to decode signup response: $error");
       debugPrint("$stackTrace");
     }
     return const {};
@@ -205,77 +176,6 @@ class _SignInPageState extends State<SignInPage> {
     return null;
   }
 
-  String? _extractToken(Map<String, dynamic> decoded) {
-    final tokens = [
-      decoded["token"],
-      decoded["accessToken"],
-      decoded["access_token"],
-      decoded["data"] is Map<String, dynamic>
-          ? (decoded["data"] as Map<String, dynamic>)["token"]
-          : null,
-      decoded["data"] is Map<String, dynamic>
-          ? (decoded["data"] as Map<String, dynamic>)["accessToken"]
-          : null,
-      decoded["data"] is Map<String, dynamic>
-          ? (decoded["data"] as Map<String, dynamic>)["access_token"]
-          : null,
-    ];
-
-    for (final value in tokens) {
-      if (value is String && value.trim().isNotEmpty) {
-        return value.trim();
-      }
-    }
-    return null;
-  }
-
-  String? _extractAdminName(Map<String, dynamic> decoded) {
-    final possibleSources = [
-      decoded["name"],
-      decoded["admin"],
-      decoded["user"],
-      decoded["data"],
-    ];
-
-    for (final source in possibleSources) {
-      if (source is Map<String, dynamic>) {
-        final name = source["name"];
-        if (name is String && name.trim().isNotEmpty) {
-          return name.trim();
-        }
-      } else if (source is String && source.trim().isNotEmpty) {
-        return source.trim();
-      }
-    }
-    return null;
-  }
-
-  Future<void> _openSignUp() async {
-    final result =
-        await Navigator.of(context).push<({String email, String? message})>(
-      MaterialPageRoute<({String email, String? message})>(
-        builder: (_) => const SignUpPage(),
-      ),
-    );
-    if (!mounted || result == null) {
-      return;
-    }
-    final trimmedEmail = result.email.trim();
-    if (trimmedEmail.isNotEmpty) {
-      _emailController.text = trimmedEmail;
-    }
-    final message = result.message?.trim();
-    if (message != null && message.isNotEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Account created. You can sign in now.")),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -287,7 +187,7 @@ class _SignInPageState extends State<SignInPage> {
             children: [
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                padding: const EdgeInsets.fromLTRB(16, 24, 24, 32),
                 decoration: BoxDecoration(
                   gradient: buildHeaderGradient(),
                   borderRadius: const BorderRadius.only(
@@ -298,8 +198,19 @@ class _SignInPageState extends State<SignInPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    IconButton(
+                      onPressed: () {
+                        Navigator.of(context).maybePop();
+                      },
+                      style: IconButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        backgroundColor: Colors.white.withValues(alpha: 0.15),
+                      ),
+                      icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                    ),
+                    const SizedBox(height: 16),
                     Text(
-                      "JustStock Admin",
+                      "Create admin account",
                       style: theme.textTheme.headlineSmall?.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.w700,
@@ -307,7 +218,7 @@ class _SignInPageState extends State<SignInPage> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      "Sign in with your admin email to manage insights securely.",
+                      "Register with your work email to access the JustStock admin tools.",
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: const Color(0xD9FFFFFF),
                       ),
@@ -336,19 +247,29 @@ class _SignInPageState extends State<SignInPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          "Admin login",
+                          "Let's get started",
                           style: theme.textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          "Enter your credentials to access the dashboard.",
+                          "Provide your details to create an admin profile.",
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: Colors.grey.shade600,
                           ),
                         ),
                         const SizedBox(height: 24),
+                        TextFormField(
+                          controller: _nameController,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            labelText: "Full name",
+                            prefixIcon: Icon(Icons.person_outline),
+                          ),
+                          validator: _validateName,
+                        ),
+                        const SizedBox(height: 16),
                         TextFormField(
                           controller: _emailController,
                           textInputAction: TextInputAction.next,
@@ -362,7 +283,7 @@ class _SignInPageState extends State<SignInPage> {
                         const SizedBox(height: 16),
                         TextFormField(
                           controller: _passwordController,
-                          textInputAction: TextInputAction.done,
+                          textInputAction: TextInputAction.next,
                           obscureText: _obscurePassword,
                           decoration: InputDecoration(
                             labelText: "Password",
@@ -382,11 +303,35 @@ class _SignInPageState extends State<SignInPage> {
                           ),
                           validator: _validatePassword,
                         ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _confirmPasswordController,
+                          textInputAction: TextInputAction.done,
+                          obscureText: _obscureConfirmPassword,
+                          decoration: InputDecoration(
+                            labelText: "Confirm password",
+                            prefixIcon: const Icon(Icons.lock_person_outlined),
+                            suffixIcon: IconButton(
+                              onPressed: () {
+                                setState(() {
+                                  _obscureConfirmPassword =
+                                      !_obscureConfirmPassword;
+                                });
+                              },
+                              icon: Icon(
+                                _obscureConfirmPassword
+                                    ? Icons.visibility_outlined
+                                    : Icons.visibility_off_outlined,
+                              ),
+                            ),
+                          ),
+                          validator: _validateConfirmPassword,
+                        ),
                         const SizedBox(height: 24),
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
-                            onPressed: _isSubmitting ? null : _handleSignIn,
+                            onPressed: _isSubmitting ? null : _handleSignUp,
                             child: _isSubmitting
                                 ? const SizedBox(
                                     height: 22,
@@ -395,24 +340,8 @@ class _SignInPageState extends State<SignInPage> {
                                       strokeWidth: 2.5,
                                     ),
                                   )
-                                : const Text("Sign in"),
+                                : const Text("Create account"),
                           ),
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              "Need an account?",
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: _openSignUp,
-                              child: const Text("Create one"),
-                            ),
-                          ],
                         ),
                       ],
                     ),
@@ -424,6 +353,17 @@ class _SignInPageState extends State<SignInPage> {
         ),
       ),
     );
+  }
+
+  String? _validateName(String? value) {
+    final trimmed = value?.trim() ?? "";
+    if (trimmed.isEmpty) {
+      return "Name is required";
+    }
+    if (trimmed.length < 3) {
+      return "Name must be at least 3 characters";
+    }
+    return null;
   }
 
   String? _validateEmail(String? value) {
@@ -444,6 +384,16 @@ class _SignInPageState extends State<SignInPage> {
     }
     if (value.length < 8) {
       return "Password must be at least 8 characters";
+    }
+    return null;
+  }
+
+  String? _validateConfirmPassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return "Confirm your password";
+    }
+    if (value != _passwordController.text) {
+      return "Passwords do not match";
     }
     return null;
   }
