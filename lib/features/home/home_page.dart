@@ -1,5 +1,6 @@
 import "dart:convert";
 
+import "package:file_picker/file_picker.dart";
 import "package:flutter/material.dart";
 import "package:http/http.dart" as http;
 
@@ -84,6 +85,101 @@ class _HomePageState extends State<HomePage> {
     }
 
     await _sendMessage(action: action, message: message.trim());
+  }
+
+  Future<void> _openImageUploadSheet() async {
+    final result = await showModalBottomSheet<_ImageUploadResult>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => const _ImageUploadSheet(),
+    );
+
+    if (!mounted || result == null) {
+      return;
+    }
+
+    await _uploadImages(result);
+  }
+
+  Future<void> _uploadImages(_ImageUploadResult data) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context, rootNavigator: true);
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) =>
+          const Center(child: CircularProgressIndicator()),
+    );
+
+    final uploadResult = await _sendImageUploadRequest(data);
+
+    if (navigator.canPop()) {
+      navigator.pop();
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    messenger.showSnackBar(SnackBar(content: Text(uploadResult.message)));
+  }
+
+  Future<({bool success, String message})> _sendImageUploadRequest(
+    _ImageUploadResult data,
+  ) async {
+    final uri = Uri.parse(
+      'https://backend-server-11f5.onrender.com/api/images/upload',
+    );
+
+    final files = [for (final image in data.images) image.asApiPayload()];
+
+    final Map<String, dynamic> payload;
+    if (files.length == 1) {
+      payload = {'file': files.first};
+    } else {
+      payload = {'files': files};
+    }
+
+    try {
+      final http.Client client = http_client.buildHttpClient();
+      try {
+        final http.Response response = await client.post(
+          uri,
+          headers: AuthSession.withAuth({'Content-Type': 'application/json'}),
+          body: jsonEncode(payload),
+        );
+
+        final decoded = _parseResponse(response.body);
+        final isCreated = response.statusCode == 201;
+
+        final message =
+            decoded.message ??
+            (isCreated
+                ? 'Images uploaded successfully.'
+                : 'Image upload failed. (HTTP ${response.statusCode})');
+
+        if (isCreated) {
+          try {
+            await SessionStore.touchLastActivityNow();
+          } catch (_) {}
+          return (success: true, message: message);
+        }
+
+        return (success: false, message: message);
+      } finally {
+        try {
+          client.close();
+        } catch (_) {}
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Failed to upload images: $error');
+      debugPrint('$stackTrace');
+      return (success: false, message: 'Network error. Please try again.');
+    }
   }
 
   Future<void> _sendMessage({
@@ -296,7 +392,7 @@ class _HomePageState extends State<HomePage> {
             ),
             const SizedBox(height: 4),
             Text(
-              'Tap a segment icon to compose and send a message.',
+              'Tap a segment icon to compose and send a message, or upload marketing images below.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: Colors.grey.shade600,
               ),
@@ -311,6 +407,7 @@ class _HomePageState extends State<HomePage> {
                     action: action,
                     onTap: () => _handleComposeTap(action),
                   ),
+                _UploadImagesTile(onTap: _openImageUploadSheet),
               ],
             ),
             const SizedBox(height: 32),
@@ -449,6 +546,278 @@ class _ActionTile extends StatelessWidget {
   }
 }
 
+class _ImageUploadSheet extends StatefulWidget {
+  const _ImageUploadSheet();
+
+  @override
+  State<_ImageUploadSheet> createState() => _ImageUploadSheetState();
+}
+
+class _ImageUploadSheetState extends State<_ImageUploadSheet> {
+  final List<_PendingImage> _images = <_PendingImage>[];
+  bool _showImageError = false;
+
+  @override
+  void initState() {
+    super.initState();
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
+  Future<void> _pickImages() async {
+    final remaining = 3 - _images.length;
+    if (remaining <= 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You can upload up to 3 images.')),
+      );
+      return;
+    }
+
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: remaining > 1,
+        withData: true,
+        type: FileType.image,
+      );
+
+      if (result == null) {
+        return;
+      }
+
+      final selected = <_PendingImage>[];
+      for (final file in result.files) {
+        if (selected.length >= remaining) {
+          break;
+        }
+        final bytes = file.bytes;
+        if (bytes == null) {
+          continue;
+        }
+
+        selected.add(
+          _PendingImage(
+            name: file.name,
+            base64Data: base64Encode(bytes),
+            sizeInBytes: bytes.length,
+            mimeType: _inferMimeType(file.name),
+          ),
+        );
+      }
+
+      if (selected.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to read selected images.')),
+        );
+        return;
+      }
+
+      setState(() {
+        _images.addAll(selected);
+        _showImageError = false;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('Failed to pick images: $error');
+      debugPrint('$stackTrace');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to pick images. Please try again.'),
+        ),
+      );
+    }
+  }
+
+  void _removeImage(_PendingImage image) {
+    setState(() {
+      _images.remove(image);
+    });
+  }
+
+  void _submit() {
+    if (_images.isEmpty) {
+      setState(() => _showImageError = true);
+      return;
+    }
+
+    Navigator.of(context).pop(
+      _ImageUploadResult(images: List<_PendingImage>.unmodifiable(_images)),
+    );
+  }
+
+  String _formatSize(int bytes) {
+    if (bytes >= 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  }
+
+  String? _inferMimeType(String fileName) {
+    final lower = fileName.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.bmp')) return 'image/bmp';
+    if (lower.endsWith('.heic')) return 'image/heic';
+    if (lower.endsWith('.svg')) return 'image/svg+xml';
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 24,
+        bottom: bottomInset + 24,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Upload images',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Choose up to three images. Selected files upload to Cloudinary once you continue.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: _pickImages,
+              icon: const Icon(Icons.file_upload_outlined),
+              label: Text(
+                _images.isEmpty ? 'Select images (max 3)' : 'Add more images',
+              ),
+            ),
+            if (_showImageError)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Please select at least one image.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.error,
+                  ),
+                ),
+              ),
+            const SizedBox(height: 16),
+            if (_images.isNotEmpty) ...[
+              ..._images.map(
+                (image) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.image_outlined, size: 28),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          image.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        _formatSize(image.sizeInBytes),
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      IconButton(
+                        tooltip: 'Remove image',
+                        icon: const Icon(Icons.close),
+                        onPressed: () => _removeImage(image),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _submit,
+                child: const Text('Upload images'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ImageUploadResult {
+  const _ImageUploadResult({required this.images});
+
+  final List<_PendingImage> images;
+}
+
+class _PendingImage {
+  const _PendingImage({
+    required this.name,
+    required this.base64Data,
+    required this.sizeInBytes,
+    this.mimeType,
+  });
+
+  final String name;
+  final String base64Data;
+  final int sizeInBytes;
+  final String? mimeType;
+
+  String asApiPayload() {
+    final type = mimeType;
+    if (type == null || type.isEmpty) {
+      return base64Data;
+    }
+    return 'data:$type;base64,$base64Data';
+  }
+}
+
+class _UploadImagesTile extends StatelessWidget {
+  const _UploadImagesTile({required this.onTap});
+
+  final VoidCallback onTap;
+
+  static const _DashboardAction _visual = _DashboardAction(
+    label: 'Upload',
+    icon: Icons.cloud_upload_outlined,
+    endpoint: 'images/upload',
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Upload images',
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: _ActionBadge(action: _visual),
+        ),
+      ),
+    );
+  }
+}
+
 class _ActionBadge extends StatelessWidget {
   const _ActionBadge({required this.action});
 
@@ -518,14 +887,14 @@ class _MlmShortcut extends StatelessWidget {
       child: Ink(
         decoration: BoxDecoration(
           gradient: buildHeaderGradient(),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: const [
-          BoxShadow(
-            color: Color.fromRGBO(139, 0, 0, 0.25),
-            blurRadius: 20,
-            offset: Offset(0, 10),
-          ),
-        ],
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: const [
+            BoxShadow(
+              color: Color.fromRGBO(139, 0, 0, 0.25),
+              blurRadius: 20,
+              offset: Offset(0, 10),
+            ),
+          ],
         ),
         child: Padding(
           padding: const EdgeInsets.all(20),
