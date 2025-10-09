@@ -431,7 +431,7 @@ class _MemberHeader extends StatelessWidget {
       decoration: BoxDecoration(
         color: isRoot
             ? Colors.white.withValues(alpha: 0.22)
-            : accentColor.withOpacity(0.12),
+            : accentColor.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(30),
       ),
       child: Text(
@@ -468,7 +468,7 @@ class _MemberHeader extends StatelessWidget {
       radius: 22,
       backgroundColor: isRoot
           ? Colors.white.withValues(alpha: 0.25)
-          : accentColor.withOpacity(0.12),
+          : accentColor.withValues(alpha: 0.12),
       child: Text(
         initial,
         style: theme.textTheme.titleMedium?.copyWith(
@@ -554,10 +554,10 @@ class _ReferralChip extends StatelessWidget {
     final initials = trimmed.isEmpty ? '?' : trimmed[0].toUpperCase();
 
     return Chip(
-      backgroundColor: accentColor.withOpacity(0.08),
+      backgroundColor: accentColor.withValues(alpha: 0.08),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       avatar: CircleAvatar(
-        backgroundColor: accentColor.withOpacity(0.16),
+        backgroundColor: accentColor.withValues(alpha: 0.16),
         child: Text(
           initials,
           style: TextStyle(
@@ -587,7 +587,7 @@ class _MilestoneBanner extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: theme.colorScheme.secondary.withOpacity(0.1),
+        color: theme.colorScheme.secondary.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
@@ -665,6 +665,5 @@ String buildNextMilestoneText(MlmMember member) {
   final names = lacking.map((referral) => referral.name).join(', ');
   return '${member.name} needs $names to reach Level $targetLevel to unlock Level ${currentLevel + 1}.';
 }
-
 
 

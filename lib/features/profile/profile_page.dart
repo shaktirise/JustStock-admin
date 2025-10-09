@@ -1,14 +1,18 @@
 import "package:flutter/material.dart";
 import "package:juststockadmin/core/auth_session.dart";
 import "package:juststockadmin/core/session_store.dart";
-import "package:juststockadmin/features/admin/active_users_page.dart";
-import "package:juststockadmin/features/admin/total_users_page.dart";
-import "package:juststockadmin/features/admin/transaction_history_page.dart";
+import "package:juststockadmin/features/admin/admin_overview_page.dart";
+import "package:juststockadmin/features/admin/admin_pending_referrals_page.dart";
+import "package:juststockadmin/features/admin/admin_users_page.dart";
+import "package:juststockadmin/features/admin/admin_wallet_ledger_page.dart";
+import "package:juststockadmin/features/admin/data/admin_api_service.dart";
+import "package:juststockadmin/features/admin/data/admin_models.dart";
+import "package:juststockadmin/features/admin/util/admin_formatters.dart";
 import "package:juststockadmin/features/auth/sign_in_page.dart";
 
 import "../../theme.dart";
 
-class ProfilePage extends StatelessWidget {
+class ProfilePage extends StatefulWidget {
   const ProfilePage({
     super.key,
     required this.adminName,
@@ -19,39 +23,107 @@ class ProfilePage extends StatelessWidget {
   final String adminEmail;
 
   @override
+  State<ProfilePage> createState() => _ProfilePageState();
+}
+
+class _ProfilePageState extends State<ProfilePage> {
+  late final AdminApiService _apiService;
+  AdminOverviewStats? _stats;
+  bool _loadingStats = false;
+  String? _statsError;
+
+  @override
+  void initState() {
+    super.initState();
+    _apiService = AdminApiService();
+    _loadStats();
+  }
+
+  @override
+  void dispose() {
+    _apiService.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadStats() async {
+    setState(() {
+      _loadingStats = true;
+      _statsError = null;
+    });
+    try {
+      final overview = await _apiService.fetchOverview();
+      if (!mounted) return;
+      setState(() {
+        _stats = overview.stats;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _statsError = error.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loadingStats = false;
+        });
+      }
+    }
+  }
+
+  String _metricValue(String Function(AdminOverviewStats stats) builder) {
+    final stats = _stats;
+    if (stats != null) return builder(stats);
+    if (_loadingStats) return "...";
+    if (_statsError != null) return "--";
+    return "...";
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final trimmedName = adminName.trim();
+    final trimmedName = widget.adminName.trim();
     final displayName = trimmedName.isEmpty ? 'Admin' : trimmedName;
-    final initial = displayName[0].toUpperCase();
-    final emailLabel = adminEmail.trim().isEmpty
+    final initial = displayName.isEmpty ? 'A' : displayName[0].toUpperCase();
+    final emailLabel = widget.adminEmail.trim().isEmpty
         ? 'Not provided'
-        : adminEmail.trim();
+        : widget.adminEmail.trim();
     final quickActionGradient = buildHeaderGradient();
     final quickActions = [
       _ProfileQuickAction(
-        title: 'Total users logged in',
-        subtitle: 'Review registrations and growth trends.',
-        icon: Icons.groups_3_outlined,
-        metric: '940',
+        title: 'Dashboard overview',
+        subtitle: 'Track signups, wallets and referrals.',
+        icon: Icons.dashboard_customize_outlined,
+        metric: _metricValue((stats) => "${stats.totalSignups}"),
         accentGradient: quickActionGradient,
-        destinationBuilder: () => const TotalUsersPage(),
+        destinationBuilder: () => const AdminOverviewPage(),
       ),
       _ProfileQuickAction(
-        title: 'Active users',
-        subtitle: 'See who is online right now.',
-        icon: Icons.bolt_outlined,
-        metric: '120',
+        title: 'Users directory',
+        subtitle: 'Search accounts and see balances.',
+        icon: Icons.people_alt_outlined,
+        metric: _metricValue((stats) => "${stats.activeUsers}"),
         accentGradient: quickActionGradient,
-        destinationBuilder: () => const ActiveUsersPage(),
+        destinationBuilder: () => const AdminUsersPage(),
       ),
       _ProfileQuickAction(
-        title: 'Transaction history',
-        subtitle: 'Track recent payouts and invoices.',
-        icon: Icons.receipt_long_outlined,
-        metric: '42',
+        title: 'Wallet ledger',
+        subtitle: 'Review credits, debits and payouts.',
+        icon: Icons.account_balance_wallet_outlined,
+        metric: _metricValue(
+          (stats) => formatCurrency(stats.totalWalletBalance),
+        ),
         accentGradient: quickActionGradient,
-        destinationBuilder: () => const TransactionHistoryPage(),
+        destinationBuilder: () => const AdminWalletLedgerPage(),
+      ),
+      _ProfileQuickAction(
+        title: 'Pending referrals',
+        subtitle: 'Approve referral payouts in one place.',
+        icon: Icons.card_giftcard_outlined,
+        metric: _metricValue(
+          (stats) => formatCurrency(stats.pendingReferralBalance),
+        ),
+        accentGradient: quickActionGradient,
+        destinationBuilder: () => const AdminPendingReferralsPage(),
       ),
     ];
 
@@ -175,6 +247,36 @@ class ProfilePage extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
+              if (_loadingStats)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: LinearProgressIndicator(),
+                ),
+              if (_statsError != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: theme.colorScheme.error,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Unable to refresh dashboard metrics.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.error,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _loadStats,
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                ),
               LayoutBuilder(
                 builder: (context, constraints) {
                   final isWide = constraints.maxWidth >= 560;
@@ -289,15 +391,15 @@ class _ProfileQuickActionCard extends StatelessWidget {
     final softenedGradient = accentColors.isNotEmpty
         ? LinearGradient(
             colors: accentColors
-                .map((color) => color.withOpacity(0.18))
+                .map((color) => color.withValues(alpha: 0.18))
                 .toList(growable: false),
             begin: accentGradient.begin,
             end: accentGradient.end,
           )
         : LinearGradient(
             colors: [
-              accentColor.withOpacity(0.18),
-              accentColor.withOpacity(0.18),
+              accentColor.withValues(alpha: 0.18),
+              accentColor.withValues(alpha: 0.18),
             ],
             begin: accentGradient.begin,
             end: accentGradient.end,

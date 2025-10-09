@@ -7,6 +7,11 @@ import "package:http/http.dart" as http;
 import "package:juststockadmin/core/auth_session.dart";
 import "package:juststockadmin/core/http_client.dart" as http_client;
 import "package:juststockadmin/core/session_store.dart";
+import "package:juststockadmin/features/admin/admin_calls_page.dart";
+import "package:juststockadmin/features/admin/admin_overview_page.dart";
+import "package:juststockadmin/features/admin/admin_pending_referrals_page.dart";
+import "package:juststockadmin/features/admin/admin_users_page.dart";
+import "package:juststockadmin/features/admin/admin_wallet_ledger_page.dart";
 import "package:juststockadmin/features/profile/profile_page.dart";
 import "package:juststockadmin/features/mlm/mlm_page.dart";
 
@@ -67,6 +72,12 @@ class _HomePageState extends State<HomePage> {
       MaterialPageRoute<void>(
         builder: (context) => MlmPage(adminName: widget.adminName),
       ),
+    );
+  }
+
+  void _openAdminPage(Widget page) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => page),
     );
   }
 
@@ -420,6 +431,63 @@ class _HomePageState extends State<HomePage> {
             ),
             const SizedBox(height: 12),
             _MlmShortcut(onTap: _openMlmPage),
+            const SizedBox(height: 32),
+            Text(
+              'Admin management',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF2C2C2C),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 16,
+              runSpacing: 16,
+              children: [
+                SizedBox(
+                  width: 168,
+                  child: _AdminShortcutTile(
+                    icon: Icons.dashboard_outlined,
+                    label: 'Overview',
+                    onTap: () => _openAdminPage(const AdminOverviewPage()),
+                  ),
+                ),
+                SizedBox(
+                  width: 168,
+                  child: _AdminShortcutTile(
+                    icon: Icons.people_alt_outlined,
+                    label: 'Users',
+                    onTap: () => _openAdminPage(const AdminUsersPage()),
+                  ),
+                ),
+                SizedBox(
+                  width: 168,
+                  child: _AdminShortcutTile(
+                    icon: Icons.call_made_outlined,
+                    label: 'Calls',
+                    onTap: () => _openAdminPage(const AdminCallsPage()),
+                  ),
+                ),
+                SizedBox(
+                  width: 168,
+                  child: _AdminShortcutTile(
+                    icon: Icons.account_balance_wallet_outlined,
+                    label: 'Wallet ledger',
+                    onTap: () =>
+                        _openAdminPage(const AdminWalletLedgerPage()),
+                  ),
+                ),
+                SizedBox(
+                  width: 168,
+                  child: _AdminShortcutTile(
+                    icon: Icons.card_giftcard_outlined,
+                    label: 'Referrals',
+                    onTap: () =>
+                        _openAdminPage(const AdminPendingReferralsPage()),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -939,6 +1007,77 @@ class _MlmShortcut extends StatelessWidget {
                 Icons.arrow_forward_ios_rounded,
                 color: Colors.white,
                 size: 18,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AdminShortcutTile extends StatelessWidget {
+  const _AdminShortcutTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      elevation: 2,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color:
+                      theme.colorScheme.primary.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  icon,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                label,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: [
+                  Text(
+                    'Open',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.arrow_forward_rounded,
+                    size: 16,
+                    color: theme.colorScheme.primary,
+                  ),
+                ],
               ),
             ],
           ),
