@@ -1,6 +1,6 @@
 {
-    "name": "juststockadmin",
-    "short_name": "juststockadmin",
+    "name": "JustStock-admin",
+    "short_name": "JustStock-admin",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

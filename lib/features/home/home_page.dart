@@ -1,7 +1,9 @@
 import "dart:convert";
+import "dart:math" as math;
 
 import "package:file_picker/file_picker.dart";
 import "package:flutter/material.dart";
+import "package:flutter/services.dart";
 import "package:http/http.dart" as http;
 
 import "package:juststockadmin/core/auth_session.dart";
@@ -76,9 +78,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _openAdminPage(Widget page) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => page),
-    );
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page));
   }
 
   Future<void> _handleComposeTap(_DashboardAction action) async {
@@ -115,6 +115,23 @@ class _HomePageState extends State<HomePage> {
     await _uploadImages(result);
   }
 
+  Future<void> _openDailyTipSheet() async {
+    final result = await showModalBottomSheet<_DailyTipSubmission>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => const _DailyTipSheet(),
+    );
+
+    if (!mounted || result == null) {
+      return;
+    }
+
+    await _submitDailyTip(result);
+  }
+
   Future<void> _uploadImages(_ImageUploadResult data) async {
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context, rootNavigator: true);
@@ -137,6 +154,30 @@ class _HomePageState extends State<HomePage> {
     }
 
     messenger.showSnackBar(SnackBar(content: Text(uploadResult.message)));
+  }
+
+  Future<void> _submitDailyTip(_DailyTipSubmission data) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context, rootNavigator: true);
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) =>
+          const Center(child: CircularProgressIndicator()),
+    );
+
+    final result = await _sendDailyTipRequest(data);
+
+    if (navigator.canPop()) {
+      navigator.pop();
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    messenger.showSnackBar(SnackBar(content: Text(result.message)));
   }
 
   Future<({bool success, String message})> _sendImageUploadRequest(
@@ -188,6 +229,57 @@ class _HomePageState extends State<HomePage> {
       }
     } catch (error, stackTrace) {
       debugPrint('Failed to upload images: $error');
+      debugPrint('$stackTrace');
+      return (success: false, message: 'Network error. Please try again.');
+    }
+  }
+
+  Future<({bool success, String message})> _sendDailyTipRequest(
+    _DailyTipSubmission data,
+  ) async {
+    final uri = Uri.parse(
+      'https://backend-server-11f5.onrender.com/api/admin/daily-tip',
+    );
+
+    final payload = {
+      'message': data.message,
+      'publishedAt': data.publishedAt.toUtc().toIso8601String(),
+    };
+
+    try {
+      final http.Client client = http_client.buildHttpClient();
+      try {
+        final http.Response response = await client.post(
+          uri,
+          headers: AuthSession.withAuth({'Content-Type': 'application/json'}),
+          body: jsonEncode(payload),
+        );
+
+        final decoded = _parseResponse(response.body);
+        final bool isCreated = response.statusCode == 201;
+        final bool success =
+            decoded.success ?? (isCreated || response.statusCode == 200);
+        final message =
+            decoded.message ??
+            (success
+                ? 'Daily tip sent successfully.'
+                : 'Unable to send daily tip.');
+
+        if (success) {
+          try {
+            await SessionStore.touchLastActivityNow();
+          } catch (_) {}
+          return (success: true, message: message);
+        }
+
+        return (success: false, message: message);
+      } finally {
+        try {
+          client.close();
+        } catch (_) {}
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Failed to submit daily tip: $error');
       debugPrint('$stackTrace');
       return (success: false, message: 'Network error. Please try again.');
     }
@@ -333,6 +425,9 @@ class _HomePageState extends State<HomePage> {
         elevation: 0,
         toolbarHeight: 88,
         centerTitle: false,
+        systemOverlayStyle: SystemUiOverlayStyle.light.copyWith(
+          statusBarColor: Colors.transparent,
+        ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: const [
@@ -410,8 +505,9 @@ class _HomePageState extends State<HomePage> {
             ),
             const SizedBox(height: 24),
             Wrap(
-              spacing: 16,
+              spacing: 12,
               runSpacing: 16,
+              alignment: WrapAlignment.start,
               children: [
                 for (final action in HomePage._actions)
                   _ActionTile(
@@ -419,6 +515,7 @@ class _HomePageState extends State<HomePage> {
                     onTap: () => _handleComposeTap(action),
                   ),
                 _UploadImagesTile(onTap: _openImageUploadSheet),
+                _DailyTipTile(onTap: _openDailyTipSheet),
               ],
             ),
             const SizedBox(height: 32),
@@ -440,53 +537,56 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
             const SizedBox(height: 12),
-            Wrap(
-              spacing: 16,
-              runSpacing: 16,
-              children: [
-                SizedBox(
-                  width: 168,
-                  child: _AdminShortcutTile(
+            LayoutBuilder(
+              builder: (context, constraints) {
+                const spacing = 12.0;
+                const minTileWidth = 152.0;
+                final availableWidth = constraints.maxWidth;
+                final rawColumns =
+                    (availableWidth + spacing) / (minTileWidth + spacing);
+                final columns = math.max(1, rawColumns.floor());
+                final tileWidth = columns == 1
+                    ? availableWidth
+                    : (availableWidth - (columns - 1) * spacing) / columns;
+
+                final tiles = <Widget>[
+                  _AdminShortcutTile(
                     icon: Icons.dashboard_outlined,
                     label: 'Overview',
                     onTap: () => _openAdminPage(const AdminOverviewPage()),
                   ),
-                ),
-                SizedBox(
-                  width: 168,
-                  child: _AdminShortcutTile(
+                  _AdminShortcutTile(
                     icon: Icons.people_alt_outlined,
                     label: 'Users',
                     onTap: () => _openAdminPage(const AdminUsersPage()),
                   ),
-                ),
-                SizedBox(
-                  width: 168,
-                  child: _AdminShortcutTile(
+                  _AdminShortcutTile(
                     icon: Icons.call_made_outlined,
                     label: 'Calls',
                     onTap: () => _openAdminPage(const AdminCallsPage()),
                   ),
-                ),
-                SizedBox(
-                  width: 168,
-                  child: _AdminShortcutTile(
+                  _AdminShortcutTile(
                     icon: Icons.account_balance_wallet_outlined,
                     label: 'Wallet ledger',
-                    onTap: () =>
-                        _openAdminPage(const AdminWalletLedgerPage()),
+                    onTap: () => _openAdminPage(const AdminWalletLedgerPage()),
                   ),
-                ),
-                SizedBox(
-                  width: 168,
-                  child: _AdminShortcutTile(
+                  _AdminShortcutTile(
                     icon: Icons.card_giftcard_outlined,
                     label: 'Referrals',
                     onTap: () =>
                         _openAdminPage(const AdminPendingReferralsPage()),
                   ),
-                ),
-              ],
+                ];
+
+                return Wrap(
+                  spacing: spacing,
+                  runSpacing: spacing,
+                  children: [
+                    for (final tile in tiles)
+                      SizedBox(width: tileWidth, child: tile),
+                  ],
+                );
+              },
             ),
           ],
         ),
@@ -582,6 +682,271 @@ class _ComposeMessageSheetState extends State<_ComposeMessageSheet> {
               child: ElevatedButton(
                 onPressed: _handleSubmit,
                 child: const Text('Submit'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DailyTipSubmission {
+  const _DailyTipSubmission({required this.message, required this.publishedAt});
+
+  final String message;
+  final DateTime publishedAt;
+}
+
+class _DailyTipSheet extends StatefulWidget {
+  const _DailyTipSheet();
+
+  @override
+  State<_DailyTipSheet> createState() => _DailyTipSheetState();
+}
+
+class _DailyTipSheetState extends State<_DailyTipSheet> {
+  late final TextEditingController _messageController;
+  late DateTime _scheduledFor;
+  bool _showValidationError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _scheduledFor = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      now.hour,
+      now.minute,
+    );
+    _messageController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _selectDate() async {
+    final initialDate = _scheduledFor;
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: DateTime.now().subtract(const Duration(days: 1)),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+
+    if (pickedDate == null) {
+      return;
+    }
+
+    setState(() {
+      _scheduledFor = DateTime(
+        pickedDate.year,
+        pickedDate.month,
+        pickedDate.day,
+        _scheduledFor.hour,
+        _scheduledFor.minute,
+      );
+    });
+  }
+
+  Future<void> _selectTime() async {
+    final timeOfDay = TimeOfDay.fromDateTime(_scheduledFor);
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: timeOfDay,
+    );
+
+    if (pickedTime == null) {
+      return;
+    }
+
+    setState(() {
+      _scheduledFor = DateTime(
+        _scheduledFor.year,
+        _scheduledFor.month,
+        _scheduledFor.day,
+        pickedTime.hour,
+        pickedTime.minute,
+      );
+    });
+  }
+
+  void _setPublishNow() {
+    final now = DateTime.now();
+    setState(() {
+      _scheduledFor = now;
+    });
+  }
+
+  void _handleSubmit() {
+    final message = _messageController.text.trim();
+    if (message.isEmpty) {
+      setState(() => _showValidationError = true);
+      return;
+    }
+
+    Navigator.of(
+      context,
+    ).pop(_DailyTipSubmission(message: message, publishedAt: _scheduledFor));
+  }
+
+  Widget _buildSchedulePicker({
+    required IconData icon,
+    required String label,
+    required String value,
+    required VoidCallback onTap,
+  }) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Ink(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: theme.colorScheme.primary.withValues(alpha: 0.12),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: theme.colorScheme.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    value,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final bottomInset = mediaQuery.viewInsets.bottom;
+    final localizations = MaterialLocalizations.of(context);
+    final timeOfDay = TimeOfDay.fromDateTime(_scheduledFor);
+    final timeLabel = localizations.formatTimeOfDay(
+      timeOfDay,
+      alwaysUse24HourFormat: mediaQuery.alwaysUse24HourFormat,
+    );
+    final dateLabel = localizations.formatMediumDate(_scheduledFor);
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: bottomInset + 16,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  height: 40,
+                  width: 40,
+                  decoration: BoxDecoration(
+                    gradient: buildHeaderGradient(),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.tips_and_updates_outlined,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Send daily tip',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _messageController,
+              maxLines: 4,
+              decoration: InputDecoration(
+                labelText: 'Tip message',
+                hintText: 'Share the daily motivation or market insight',
+                errorText: _showValidationError
+                    ? 'Please add a tip message.'
+                    : null,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Publish schedule',
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildSchedulePicker(
+                    icon: Icons.calendar_month_outlined,
+                    label: 'Date',
+                    value: dateLabel,
+                    onTap: _selectDate,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildSchedulePicker(
+                    icon: Icons.schedule_outlined,
+                    label: 'Time',
+                    value: timeLabel,
+                    onTap: _selectTime,
+                  ),
+                ),
+              ],
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: _setPublishNow,
+                child: const Text('Use current time'),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _handleSubmit,
+                child: const Text('Send tip'),
               ),
             ),
           ],
@@ -858,6 +1223,34 @@ class _PendingImage {
   }
 }
 
+class _DailyTipTile extends StatelessWidget {
+  const _DailyTipTile({required this.onTap});
+
+  final VoidCallback onTap;
+
+  static const _DashboardAction _visual = _DashboardAction(
+    label: 'Daily Tip',
+    icon: Icons.tips_and_updates_outlined,
+    endpoint: 'admin/daily-tip',
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Send daily tip',
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: _ActionBadge(action: _visual),
+        ),
+      ),
+    );
+  }
+}
+
 class _UploadImagesTile extends StatelessWidget {
   const _UploadImagesTile({required this.onTap});
 
@@ -1044,14 +1437,10 @@ class _AdminShortcutTile extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color:
-                      theme.colorScheme.primary.withValues(alpha: 0.12),
+                  color: theme.colorScheme.primary.withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
-                  icon,
-                  color: theme.colorScheme.primary,
-                ),
+                child: Icon(icon, color: theme.colorScheme.primary),
               ),
               const SizedBox(height: 12),
               Text(
