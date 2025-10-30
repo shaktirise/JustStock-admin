@@ -65,7 +65,7 @@ class _AdminCallsPageState extends State<AdminCallsPage> {
         userId: _userIdController.text.trim().isEmpty
             ? null
             : _userIdController.text.trim(),
-        start: _dateRange?.start,
+        start: _dateRange?.start ?? DateTime.utc(1970, 1, 1),
         end: _dateRange?.end,
       );
       setState(() {

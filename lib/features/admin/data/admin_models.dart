@@ -75,42 +75,57 @@ class AdminOverviewStats {
   final Map<String, dynamic> additional;
 
   factory AdminOverviewStats.fromJson(Map<String, dynamic> json) {
+    // New admin dashboard shape exposes `totals` and `money` blocks
+    final totals = _asMap(json['totals']) ?? const {};
+    final money = _asMap(json['money']) ?? const {};
+    final credits = _readDouble(_asMap(money['credits']) ?? const {}, const [
+      'amountRupees',
+      'amount',
+      'total',
+    ], defaultValue: 0);
+    final debits = _readDouble(_asMap(money['debits']) ?? const {}, const [
+      'amountRupees',
+      'amount',
+      'total',
+    ], defaultValue: 0);
+    final netInflow = _readDouble(money, const [
+      'netInflowRupees',
+      'netRupees',
+      'net',
+    ], defaultValue: credits - debits);
+    final commissions = _asMap(money['commissions']) ?? const {};
+    final pendingCommissions = _readDouble(
+      _asMap(commissions['pending']) ?? commissions,
+      const ['amountRupees', 'pending', 'amount', 'total'],
+      defaultValue: 0,
+    );
+
     return AdminOverviewStats(
-      totalSignups: _readInt(json, const [
-        "totalSignups",
-        "signups",
-        "total_users",
-        "totalUsers",
-        "signUps",
+      totalSignups: _readInt(totals.isEmpty ? json : totals, const [
+        'users',
+        'totalUsers',
+        'totalSignups',
+        'signups',
+        'signUps',
       ]),
-      activeUsers: _readInt(json, const [
-        "activeUsers",
-        "actives",
-        "active_users",
-        "active_users_count",
+      activeUsers: _readInt(totals.isEmpty ? json : totals, const [
+        'activeUsers',
+        'actives',
+        'active_users',
+        'active_users_count',
       ]),
-      totalWalletBalance: _readDouble(json, const [
-        "walletTotal",
-        "walletBalance",
-        "totalWalletBalance",
-        "wallet",
-        "wallet_total",
-      ]),
-      pendingReferralBalance: _readDouble(json, const [
-        "referralBalance",
-        "referralsPending",
-        "pendingReferral",
-        "pending_referrals",
-      ]),
+      // Use net inflow as aggregate money figure for the card
+      totalWalletBalance: netInflow,
+      pendingReferralBalance: pendingCommissions,
       totalRevenue: _readDoubleOrNull(json, const [
-        "totalRevenue",
-        "revenue",
-        "total_revenue",
+        'totalRevenue',
+        'revenue',
+        'total_revenue',
       ]),
       recentPayouts: _readDoubleOrNull(json, const [
-        "recentPayouts",
-        "payouts",
-        "recent_payouts",
+        'recentPayouts',
+        'payouts',
+        'recent_payouts',
       ]),
       additional: Map<String, dynamic>.unmodifiable(json),
     );
@@ -158,6 +173,15 @@ class AdminCallRecord {
           )
         : null;
 
+    final amountRupees = _readDoubleOrNull(json, const [
+      'amountRupees',
+      'rupees',
+    ]);
+    final amountPaise = _readDoubleOrNull(json, const [
+      'amountPaise',
+      'paise',
+    ]);
+
     return AdminCallRecord(
       id: _readString(json, const ["id", "_id", "callId", "orderId"]),
       user: userSource != null ? AdminUserReference.fromJson(userSource) : null,
@@ -169,14 +193,17 @@ class AdminCallRecord {
               "planName",
               "segment",
               "product",
+              "title",
             ],
           ),
-      amount: _readDoubleOrNull(json, const [
-        "amount",
-        "price",
-        "total",
-        "payableAmount",
-      ]),
+      amount: amountRupees ??
+          (amountPaise != null ? amountPaise / 100 : null) ??
+          _readDoubleOrNull(json, const [
+            "amount",
+            "price",
+            "total",
+            "payableAmount",
+          ]),
       currency: _readStringOrNull(json, const [
         "currency",
         "currencyCode",
@@ -245,16 +272,33 @@ class AdminWalletEntry {
       "category",
       "transactionType",
     ]);
-    final rawAmount = _readDoubleOrNull(json, const [
-      "amount",
-      "value",
-      "delta",
+    final amountRupees = _readDoubleOrNull(json, const [
+      'amountRupees',
+      'rupees',
     ]);
+    final amountPaise = _readDoubleOrNull(json, const [
+      'amountPaise',
+      'paise',
+    ]);
+    final rawAmount = amountRupees ??
+        (amountPaise != null ? amountPaise / 100 : null) ??
+        _readDoubleOrNull(json, const [
+          "amount",
+          "value",
+          "delta",
+        ]);
     final isCredit = _readBool(json, const [
           "isCredit",
           "credit",
           "is_credit",
         ]) ??
+        (() {
+          final direction = _readStringOrNull(json, const ['direction']);
+          if (direction != null) {
+            return direction.toUpperCase() == 'CREDIT';
+          }
+          return null;
+        }()) ??
         (rawAmount != null ? rawAmount >= 0 : null) ??
         (type != null
             ? type.toLowerCase().contains("credit") ||
@@ -264,7 +308,7 @@ class AdminWalletEntry {
       id: _readString(json, const ["id", "_id", "entryId", "transactionId"]),
       amount: rawAmount ?? 0,
       isCredit: isCredit,
-      type: type,
+      type: type ?? _readStringOrNull(json, const ["rawType"]),
       status: _readStringOrNull(json, const [
         "status",
         "state",
@@ -490,17 +534,25 @@ class AdminUserSummary {
   factory AdminUserSummary.fromJson(Map<String, dynamic> json) {
     final userSource = _asMap(json["user"]) ?? json;
     final reference = AdminUserReference.fromJson(userSource);
+    final walletRupees = _readDoubleOrNull(json, const [
+      'walletBalanceRupees',
+      'walletRupees',
+    ]);
+    final pendingRupees = _readDoubleOrNull(json, const [
+      'pendingReferralApproxRupees',
+      'pendingReferralRupees',
+    ]);
     return AdminUserSummary(
       reference: reference,
       role: _readStringOrNull(json, const ["role", "userRole"]) ??
           reference.role,
-      walletBalance: _readDoubleOrNull(json, const [
+      walletBalance: walletRupees ?? _readDoubleOrNull(json, const [
         "walletBalance",
         "wallet",
         "wallet_total",
         "wallet_total_balance",
       ]),
-      pendingReferral: _readDoubleOrNull(json, const [
+      pendingReferral: pendingRupees ?? _readDoubleOrNull(json, const [
         "pendingReferral",
         "pendingReferralBalance",
         "pending_referral",
@@ -537,6 +589,7 @@ class AdminUserDetail {
     required this.summary,
     required this.wallet,
     required this.referralStats,
+    this.referralCounts = const <int, int>{},
     required this.recentCalls,
     required this.recentLedger,
     required this.referralHistory,
@@ -546,6 +599,7 @@ class AdminUserDetail {
   final AdminUserSummary summary;
   final AdminWalletSnapshot wallet;
   final AdminReferralStats referralStats;
+  final Map<int, int> referralCounts;
   final List<AdminCallRecord> recentCalls;
   final List<AdminWalletEntry> recentLedger;
   final List<AdminReferralEntry> referralHistory;
@@ -563,6 +617,10 @@ class AdminUserDetail {
       ),
       referralStats: AdminReferralStats.fromJson(
         _asMap(root["referrals"]) ?? root,
+      ),
+      referralCounts: _parseReferralCounts(
+        _asMap(root["referralCounts"]) ??
+            _asMap(_asMap(root["referrals"])?["counts"]),
       ),
       recentCalls: _mapList(
         root["recentCalls"] ??
@@ -715,13 +773,22 @@ class AdminReferralEntry {
     final sourceUser = _asMap(json["source"]) ??
         _asMap(json["referrer"]) ??
         _asMap(json["from"]);
+    final rupees = _readDoubleOrNull(json, const [
+      'amountRupees',
+      'rupees',
+    ]);
+    final paise = _readDoubleOrNull(json, const [
+      'amountPaise',
+      'paise',
+    ]);
     return AdminReferralEntry(
       id: _readString(json, const ["id", "_id", "entryId"]),
-      amount: _readDouble(json, const [
-        "amount",
-        "value",
-        "referralAmount",
-      ]),
+      amount: rupees ?? (paise != null ? paise / 100 : null) ??
+          _readDouble(json, const [
+            "amount",
+            "value",
+            "referralAmount",
+          ]),
       status: _readString(json, const [
         "status",
         "state",
@@ -739,6 +806,7 @@ class AdminReferralEntry {
         "createdAt",
         "created_at",
         "timestamp",
+        "effectiveAt",
       ]),
       updatedAt: _readDateTime(json, const [
         "updatedAt",
@@ -747,6 +815,30 @@ class AdminReferralEntry {
       metadata: Map<String, dynamic>.unmodifiable(json),
     );
   }
+}
+
+Map<int, int> _parseReferralCounts(Map<String, dynamic>? source) {
+  if (source == null || source.isEmpty) return const <int, int>{};
+  final result = <int, int>{};
+  source.forEach((key, value) {
+    final level = _parseLevelKey(key);
+    if (level != null) {
+      final count = _tryParseInt(value) ?? 0;
+      result[level] = count;
+    }
+  });
+  return Map<int, int>.unmodifiable(result);
+}
+
+int? _parseLevelKey(String key) {
+  final lower = key.toLowerCase().trim();
+  final stripped = lower
+      .replaceAll(RegExp(r"[^0-9a-z]"), "")
+      .replaceFirst("level", "")
+      .replaceFirst("lvl", "")
+      .replaceFirst("l", "");
+  final maybe = int.tryParse(RegExp(r"\d+").stringMatch(stripped) ?? "");
+  return maybe;
 }
 
 class ApiException implements Exception {
@@ -971,7 +1063,13 @@ DateTime? _tryParseDateTime(dynamic value) {
 }
 
 Map<String, dynamic>? _extractUser(Map<String, dynamic> json) {
-  for (final key in ["userId", "user_id", "uid"]) {
+  for (final key in [
+    "userId",
+    "user_id",
+    "uid",
+    "uplineUser",
+    "downlineUser",
+  ]) {
     final value = json[key];
     if (value is Map<String, dynamic>) {
       return value;

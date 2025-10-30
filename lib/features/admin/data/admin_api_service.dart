@@ -26,10 +26,23 @@ class AdminApiService {
 
   final String baseUrl;
 
-  Future<AdminOverview> fetchOverview() async {
+  Future<AdminOverview> fetchOverview({
+    DateTime? from,
+    DateTime? to,
+    String? userId,
+  }) async {
+    // Use an all-time wide window unless a range is provided
+    final defaultFrom = DateTime.utc(1970, 1, 1);
     final response = await _client
         .get(
-          _buildUri("/api/admin/dashboard/overview"),
+          _buildUri(
+            "/api/admin/dashboard/overview",
+            {
+              "from": from ?? defaultFrom,
+              if (to != null) "to": to,
+              if (userId != null && userId.isNotEmpty) "userId": userId,
+            },
+          ),
           headers: _authHeaders(),
         )
         .timeout(_timeout);
@@ -45,6 +58,7 @@ class AdminApiService {
     DateTime? start,
     DateTime? end,
   }) async {
+    final defaultStart = DateTime.utc(1970, 1, 1);
     final response = await _client
         .get(
           _buildUri(
@@ -52,9 +66,10 @@ class AdminApiService {
             {
               "page": page,
               "limit": limit,
-              "userId": userId,
-              "start": start,
-              "end": end,
+              if (userId != null && userId.isNotEmpty) "userId": userId,
+              // If no explicit range, use all-time for non-zero totals in UI
+              "start": start ?? defaultStart,
+              if (end != null) "end": end,
             },
           ),
           headers: _authHeaders(),
@@ -71,22 +86,24 @@ class AdminApiService {
   Future<PaginatedResult<AdminWalletEntry>> fetchWalletLedger({
     int page = 1,
     int limit = 20,
-    String? type,
+    String? types,
     String? userId,
-    DateTime? start,
-    DateTime? end,
+    DateTime? from,
+    DateTime? to,
   }) async {
+    final defaultFrom = DateTime.utc(1970, 1, 1);
     final response = await _client
         .get(
           _buildUri(
             "/api/admin/wallet-ledger",
             {
               "page": page,
-              "limit": limit,
-              "type": type,
-              "userId": userId,
-              "start": start,
-              "end": end,
+              // API expects pageSize
+              "pageSize": limit,
+              if (types != null && types.isNotEmpty) "types": types,
+              if (userId != null && userId.isNotEmpty) "userId": userId,
+              "from": from ?? defaultFrom,
+              if (to != null) "to": to,
             },
           ),
           headers: _authHeaders(),
@@ -104,15 +121,22 @@ class AdminApiService {
     int page = 1,
     int limit = 20,
     String? userId,
+    DateTime? from,
+    DateTime? to,
   }) async {
+    // Use the new commissions feed (better status/level tracking)
+    final defaultFrom = DateTime.utc(1970, 1, 1);
     final response = await _client
         .get(
           _buildUri(
-            "/api/admin/referrals/pending",
+            "/api/admin/commissions",
             {
               "page": page,
-              "limit": limit,
-              "userId": userId,
+              "pageSize": limit,
+              "status": "PENDING",
+              if (userId != null && userId.isNotEmpty) "userId": userId,
+              "from": from ?? defaultFrom,
+              if (to != null) "to": to,
             },
           ),
           headers: _authHeaders(),
@@ -155,31 +179,115 @@ class AdminApiService {
   }
 
   Future<AdminUserDetail> fetchUserProfile(String userId) async {
-    final response = await _client
+    // Fetch basic profile + recents
+    final profileResp = await _client
         .get(
           _buildUri("/api/admin/users/$userId"),
           headers: _authHeaders(),
         )
         .timeout(_timeout);
-    final body = _handleResponse(response);
+    final profile = _handleResponse(profileResp);
+
+    // Fetch wallet/referral aggregates from the summary endpoint
+    final defaultFrom = DateTime.utc(1970, 1, 1);
+    final summaryResp = await _client
+        .get(
+          _buildUri(
+            "/api/admin/users/$userId/summary",
+            {
+              "from": defaultFrom,
+              // keep 'to' empty for open-ended; server uses now
+              "depth": 3,
+            },
+          ),
+          headers: _authHeaders(),
+        )
+        .timeout(_timeout);
+    final summary = _handleResponse(summaryResp);
+
+    // Prepare wallet snapshot from summary
+    Map<String, dynamic> walletSrc;
+    final w = summary["wallet"];
+    if (w is Map<String, dynamic>) {
+      walletSrc = w;
+    } else if (w is Map) {
+      walletSrc = w.map<String, dynamic>((key, dynamic value) => MapEntry("$key", value));
+    } else {
+      walletSrc = Map<String, dynamic>.from(summary);
+    }
+    final wallet = <String, dynamic>{
+      // map availableRupees -> available
+      "available": walletSrc["availableRupees"] ?? walletSrc["walletBalanceRupees"] ??
+          walletSrc["available"],
+      // defaults for optional fields
+      "locked": walletSrc["lockedRupees"] ?? walletSrc["locked"] ?? 0,
+      "pending": walletSrc["pendingRupees"] ?? walletSrc["pending"] ?? 0,
+    };
+
+    // Aggregate commissions by level into totals
+    double pending = 0, released = 0, reversed = 0;
+    final cbl = summary["commissionsByLevel"];
+    if (cbl is Map) {
+      for (final value in cbl.values) {
+        if (value is Map) {
+          pending += _readCommissionAmount(value["pending"]);
+          released += _readCommissionAmount(value["released"]) +
+              _readCommissionAmount(value["paid"]);
+          reversed += _readCommissionAmount(value["reversed"]) +
+              _readCommissionAmount(value["cancelled"]);
+        }
+      }
+    } else if (cbl is List) {
+      for (final item in cbl) {
+        if (item is Map) {
+          pending += _readCommissionAmount(item["pending"]);
+          released += _readCommissionAmount(item["released"]) +
+              _readCommissionAmount(item["paid"]);
+          reversed += _readCommissionAmount(item["reversed"]) +
+              _readCommissionAmount(item["cancelled"]);
+        }
+      }
+    }
+    final referralsAgg = <String, dynamic>{
+      "pending": pending,
+      "paid": released,
+      "cancelled": reversed,
+      "total": pending + released + reversed,
+    };
+
+    // Referral counts per level
+    final referralCounts = _extractReferralCounts(summary);
+
+    // Merge into a single payload that AdminUserDetail can parse
+    final merged = <String, dynamic>{
+      ...profile,
+      "wallet": wallet,
+      "referrals": referralsAgg,
+      if (referralCounts.isNotEmpty) "referralCounts": referralCounts,
+    };
     await _touchLastActivity();
-    return AdminUserDetail.fromJson(body);
+    return AdminUserDetail.fromJson(merged);
   }
 
   Future<PaginatedResult<AdminWalletEntry>> fetchUserWalletLedger(
     String userId, {
     int page = 1,
     int limit = 20,
-    String? type,
+    String? types,
+    DateTime? from,
+    DateTime? to,
   }) async {
+    final defaultFrom = DateTime.utc(1970, 1, 1);
     final response = await _client
         .get(
           _buildUri(
             "/api/admin/users/$userId/wallet-ledger",
             {
               "page": page,
-              "limit": limit,
-              "type": type,
+              "pageSize": limit,
+              if (types != null && types.isNotEmpty) "types": types,
+              "from": from ?? defaultFrom,
+              if (to != null) "to": to,
             },
           ),
           headers: _authHeaders(),
@@ -199,14 +307,17 @@ class AdminApiService {
     int limit = 20,
     String? status,
   }) async {
+    // Use commissions feed filtered by user for full history
     final response = await _client
         .get(
           _buildUri(
-            "/api/admin/users/$userId/referrals",
+            "/api/admin/commissions",
             {
               "page": page,
-              "limit": limit,
-              "status": status,
+              "pageSize": limit,
+              "userId": userId,
+              if (status != null && status.isNotEmpty) "status": status.toUpperCase(),
+              "from": DateTime.utc(1970, 1, 1),
             },
           ),
           headers: _authHeaders(),
@@ -239,11 +350,15 @@ class AdminApiService {
     required String entryId,
     required String status,
   }) async {
+    // Map UI statuses to server statuses
+    final normalized = status.toLowerCase();
+    final serverStatus =
+        normalized == "paid" ? "RELEASED" : (normalized == "cancelled" ? "REVERSED" : status);
     final response = await _client
         .patch(
-          _buildUri("/api/auth/admin/referrals/$entryId/status"),
+          _buildUri("/api/admin/commissions/$entryId"),
           headers: _authHeaders(const {"Content-Type": "application/json"}),
-          body: jsonEncode({"status": status}),
+          body: jsonEncode({"status": serverStatus}),
         )
         .timeout(_timeout);
     _handleResponse(response);
@@ -349,4 +464,28 @@ class AdminApiService {
     }
     return baseUrl;
   }
+}
+
+double _readCommissionAmount(dynamic value) {
+  if (value == null) return 0;
+  if (value is num) return value.toDouble();
+  if (value is Map) {
+    final v = value["amountRupees"] ?? value["rupees"] ?? value["amount"];
+    if (v is num) return v.toDouble();
+  }
+  return 0;
+}
+
+Map<String, dynamic> _extractReferralCounts(Map<String, dynamic> summary) {
+  final referrals = summary["referrals"];
+  Map<String, dynamic>? countsMap;
+  if (referrals is Map) {
+    final c = referrals["counts"];
+    if (c is Map<String, dynamic>) {
+      countsMap = c;
+    } else if (c is Map) {
+      countsMap = c.map<String, dynamic>((k, dynamic v) => MapEntry("$k", v));
+    }
+  }
+  return countsMap ?? const <String, dynamic>{};
 }

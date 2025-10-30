@@ -15,7 +15,7 @@ import "package:juststockadmin/features/admin/admin_pending_referrals_page.dart"
 import "package:juststockadmin/features/admin/admin_users_page.dart";
 import "package:juststockadmin/features/admin/admin_wallet_ledger_page.dart";
 import "package:juststockadmin/features/profile/profile_page.dart";
-import "package:juststockadmin/features/mlm/mlm_page.dart";
+// Removed dummy MLM Levels tool
 
 import "../../theme.dart";
 
@@ -69,13 +69,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void _openMlmPage() {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (context) => MlmPage(adminName: widget.adminName),
-      ),
-    );
-  }
+  // Removed MLM page opener
 
   void _openAdminPage(Widget page) {
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page));
@@ -519,16 +513,7 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
             const SizedBox(height: 32),
-            Text(
-              'Team growth tools',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF2C2C2C),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _MlmShortcut(onTap: _openMlmPage),
-            const SizedBox(height: 32),
+            // MLM section removed
             Text(
               'Admin management',
               style: theme.textTheme.titleMedium?.copyWith(

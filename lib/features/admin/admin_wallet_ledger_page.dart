@@ -66,7 +66,8 @@ class _AdminWalletLedgerPageState extends State<AdminWalletLedgerPage> {
         userId: _userIdController.text.trim().isEmpty
             ? null
             : _userIdController.text.trim(),
-        type: _resolveTypeFilter(),
+        types: _resolveTypesCsv(),
+        from: DateTime.utc(1970, 1, 1),
       );
       setState(() {
         _result = result;
@@ -84,15 +85,10 @@ class _AdminWalletLedgerPageState extends State<AdminWalletLedgerPage> {
     }
   }
 
-  String? _resolveTypeFilter() {
-    switch (_filter) {
-      case LedgerFilter.credit:
-        return "credit";
-      case LedgerFilter.debit:
-        return "debit";
-      case LedgerFilter.all:
-        break;
-    }
+  String? _resolveTypesCsv() {
+    // Server expects a CSV of types like DEPOSIT,PURCHASE. We only forward the
+    // manual custom type. Credit/Debit are shown client-side, not used as a filter.
+    if (_filter != LedgerFilter.all) return null;
     final manual = _typeController.text.trim();
     if (manual.isEmpty) return null;
     return manual;

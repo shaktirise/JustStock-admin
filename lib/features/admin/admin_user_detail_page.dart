@@ -72,9 +72,9 @@ class _AdminUserDetailPageState extends State<AdminUserDetailPage> {
         widget.userId,
         page: _ledgerPage,
         limit: 10,
-        type: _ledgerFilter == LedgerFilter.all
-            ? null
-            : (_ledgerFilter == LedgerFilter.credit ? "credit" : "debit"),
+        // Filter by direction is handled client-side; server only supports types CSV
+        types: null,
+        from: DateTime.utc(1970, 1, 1),
       );
       if (!mounted) return;
       setState(() {
@@ -258,6 +258,8 @@ class _AdminUserDetailPageState extends State<AdminUserDetailPage> {
                 _buildWallet(detail.wallet),
                 const SizedBox(height: 20),
                 _buildReferralStats(detail.referralStats),
+                const SizedBox(height: 12),
+                _buildReferralCounts(detail.referralCounts),
                 const SizedBox(height: 20),
                 _buildActions(),
                 const SizedBox(height: 24),
@@ -388,6 +390,41 @@ class _AdminUserDetailPageState extends State<AdminUserDetailPage> {
       ),
     ];
     return _StatGrid(cards: cards, title: "Referral summary");
+  }
+  
+  Widget _buildReferralCounts(Map<int, int> counts) {
+    if (counts.isEmpty) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final levels = counts.keys.toList()..sort();
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Referral levels",
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final level in levels)
+                  Chip(
+                    avatar: const Icon(Icons.people_outline, size: 18),
+                    label: Text("L$level: ${counts[level]}"),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildActions() {

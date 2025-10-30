@@ -90,3 +90,4 @@ Color ledgerTypeColor(BuildContext context, AdminWalletEntry entry) {
 }
 
 String _twoDigits(int value) => value.toString().padLeft(2, "0");
+

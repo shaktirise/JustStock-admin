@@ -32,7 +32,8 @@ class _AdminOverviewPageState extends State<AdminOverviewPage> {
     super.dispose();
   }
 
-  Future<AdminOverview> _fetchOverview() => _service.fetchOverview();
+  Future<AdminOverview> _fetchOverview() =>
+      _service.fetchOverview(from: DateTime.utc(1970, 1, 1));
 
   Future<void> _refresh() async {
     final future = _fetchOverview();

@@ -17,14 +17,16 @@ ThemeData buildAppTheme() {
       onSurface: const Color(0xFF1F1B1B),
     ),
     appBarTheme: const AppBarTheme(
-      backgroundColor: Colors.transparent,
-      elevation: 0,
+      backgroundColor: _primaryMaroon,
       foregroundColor: Colors.white,
+      elevation: 1,
+      centerTitle: false,
       titleTextStyle: TextStyle(
         color: Colors.white,
         fontSize: 20,
         fontWeight: FontWeight.w600,
       ),
+      iconTheme: IconThemeData(color: Colors.white),
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
