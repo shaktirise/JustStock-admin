@@ -7,6 +7,7 @@ import "package:flutter/services.dart";
 import "package:http/http.dart" as http;
 
 import "package:juststockadmin/core/auth_session.dart";
+import "package:juststockadmin/core/api_config.dart";
 import "package:juststockadmin/core/http_client.dart" as http_client;
 import "package:juststockadmin/core/session_store.dart";
 import "package:juststockadmin/features/admin/admin_calls_page.dart";
@@ -53,6 +54,14 @@ class HomePage extends StatefulWidget {
     ),
   ];
 
+  // New: Advice V2 quick actions (Stocks/Future/Options/Commodity)
+  static const _adviceActions = <_AdviceCategoryAction>[
+    _AdviceCategoryAction(label: 'Stocks', category: 'STOCKS', icon: Icons.auto_graph),
+    _AdviceCategoryAction(label: 'Future', category: 'FUTURE', icon: Icons.trending_up),
+    _AdviceCategoryAction(label: 'Options', category: 'OPTIONS', icon: Icons.swap_vert_circle_outlined),
+    _AdviceCategoryAction(label: 'Commodity', category: 'COMMODITY', icon: Icons.analytics_outlined),
+  ];
+
   @override
   State<HomePage> createState() => _HomePageState();
 }
@@ -73,6 +82,35 @@ class _HomePageState extends State<HomePage> {
 
   void _openAdminPage(Widget page) {
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page));
+  }
+
+  Future<void> _handleAdviceComposeTap(_AdviceCategoryAction action) async {
+    final result = await showModalBottomSheet<_AdviceComposeResult>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => _AdviceComposeSheet(action: action),
+    );
+
+    if (!mounted || result == null) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final outcome = await _sendAdviceV2(result);
+
+    if (!mounted) return;
+    final rootNavigator = Navigator.of(context, rootNavigator: true);
+    if (rootNavigator.canPop()) rootNavigator.pop();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(outcome.success ? 'Sent successfully.' : outcome.message)),
+    );
   }
 
   Future<void> _handleComposeTap(_DashboardAction action) async {
@@ -363,6 +401,74 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<({bool success, String message})> _sendAdviceV2(
+    _AdviceComposeResult data,
+  ) async {
+    // Map category to path as per API contract
+    final String segment = () {
+      switch (data.category.toUpperCase()) {
+        case 'STOCKS':
+          return 'stocks';
+        case 'OPTIONS':
+          return 'options';
+        case 'FUTURE':
+          return 'future';
+        case 'COMMODITY':
+          return 'commodity';
+        default:
+          return '';
+      }
+    }();
+
+    final uri = segment.isEmpty
+        ? AdminApiConfig.buildUri('/api/advice-v2')
+        : AdminApiConfig.buildUri('/api/advice-v2/$segment');
+
+    // Body spec: { text, price, buy, target, stoploss }
+    final payload = <String, dynamic>{
+      if (data.text != null && data.text!.trim().isNotEmpty) 'text': data.text!.trim(),
+      if (data.buy != null && data.buy!.trim().isNotEmpty) 'buy': data.buy!.trim(),
+      if (data.target != null && data.target!.trim().isNotEmpty) 'target': data.target!.trim(),
+      if (data.stoploss != null && data.stoploss!.trim().isNotEmpty) 'stoploss': data.stoploss!.trim(),
+      if (data.price != null) 'price': data.price,
+    };
+
+    try {
+      final http.Client client = http_client.buildHttpClient();
+      try {
+        final response = await client
+            .post(
+              uri,
+              headers: AuthSession.withAuth({'Content-Type': 'application/json'}),
+              body: jsonEncode(payload),
+            )
+            .timeout(const Duration(seconds: 25));
+
+        final decoded = _parseResponse(response.body);
+        final success = decoded.success ??
+            (response.statusCode >= 200 && response.statusCode < 300);
+        final message = decoded.message ??
+            (success ? 'Advice sent.' : 'Unable to send advice.');
+
+        if (success) {
+          try {
+            await SessionStore.touchLastActivityNow();
+          } catch (_) {}
+          return (success: true, message: message);
+        }
+        return (success: false, message: message);
+      } finally {
+        try {
+          client.close();
+        } catch (_) {}
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Failed to send advice-v2: $error');
+      debugPrint('$stackTrace');
+      return (success: false, message: 'Network error. Please try again.');
+    }
+  }
+
   ({bool? success, String? message}) _parseResponse(String body) {
     try {
       final dynamic decoded = jsonDecode(body);
@@ -503,11 +609,13 @@ class _HomePageState extends State<HomePage> {
               runSpacing: 16,
               alignment: WrapAlignment.start,
               children: [
-                for (final action in HomePage._actions)
-                  _ActionTile(
+                // New: Advice V2 actions (Stocks/Future/Options/Commodity)
+                for (final action in HomePage._adviceActions)
+                  _AdviceTile(
                     action: action,
-                    onTap: () => _handleComposeTap(action),
+                    onTap: () => _handleAdviceComposeTap(action),
                   ),
+                // Removed legacy segment icons: Nifty, BankNifty, Stocks, Sensex, Commodity
                 _UploadImagesTile(onTap: _openImageUploadSheet),
                 _DailyTipTile(onTap: _openDailyTipSheet),
               ],
@@ -667,6 +775,172 @@ class _ComposeMessageSheetState extends State<_ComposeMessageSheet> {
               child: ElevatedButton(
                 onPressed: _handleSubmit,
                 child: const Text('Submit'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ===== Advice V2 Compose =====
+class _AdviceCategoryAction {
+  const _AdviceCategoryAction({
+    required this.label,
+    required this.category,
+    required this.icon,
+  });
+  final String label;
+  final String category; // canonical required by backend: STOCKS/FUTURE/OPTIONS/COMMODITY
+  final IconData icon;
+}
+
+class _AdviceComposeResult {
+  const _AdviceComposeResult({
+    required this.category,
+    this.text,
+    this.buy,
+    this.target,
+    this.stoploss,
+    this.price,
+  });
+  final String category;
+  final String? text;
+  final String? buy;
+  final String? target;
+  final String? stoploss;
+  final int? price; // rupees
+}
+
+class _AdviceComposeSheet extends StatefulWidget {
+  const _AdviceComposeSheet({required this.action});
+  final _AdviceCategoryAction action;
+
+  @override
+  State<_AdviceComposeSheet> createState() => _AdviceComposeSheetState();
+}
+
+class _AdviceComposeSheetState extends State<_AdviceComposeSheet> {
+  late final TextEditingController _buy;
+  late final TextEditingController _target;
+  late final TextEditingController _stoploss;
+  late final TextEditingController _text;
+  late final TextEditingController _price;
+  bool _error = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _buy = TextEditingController();
+    _target = TextEditingController();
+    _stoploss = TextEditingController();
+    _text = TextEditingController();
+    _price = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _buy.dispose();
+    _target.dispose();
+    _stoploss.dispose();
+    _text.dispose();
+    _price.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final t = _text.text.trim();
+    final b = _buy.text.trim();
+    final g = _target.text.trim();
+    final s = _stoploss.text.trim();
+    if ([t, b, g, s].every((e) => e.isEmpty)) {
+      setState(() => _error = true);
+      return;
+    }
+    int? price;
+    final p = _price.text.trim();
+    if (p.isNotEmpty) price = int.tryParse(p);
+    Navigator.of(context).pop(
+      _AdviceComposeResult(
+        category: widget.action.category,
+        text: t.isEmpty ? null : t,
+        buy: b.isEmpty ? null : b,
+        target: g.isEmpty ? null : g,
+        stoploss: s.isEmpty ? null : s,
+        price: price,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final theme = Theme.of(context);
+    return Padding(
+      padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: bottomInset + 16),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Container(
+                  height: 40,
+                  width: 40,
+                  decoration: BoxDecoration(
+                    gradient: buildHeaderGradient(),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(widget.action.icon, color: Colors.white),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Send ${widget.action.label} advice',
+                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _buy,
+              decoration: const InputDecoration(labelText: 'BUY'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _target,
+              decoration: const InputDecoration(labelText: 'TARGET'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _stoploss,
+              decoration: const InputDecoration(labelText: 'STOPLOSS'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _text,
+              maxLines: 4,
+              decoration: InputDecoration(
+                labelText: 'Message (optional)',
+                hintText: 'If empty, BUY/TARGET/STOPLOSS are combined',
+                errorText: _error ? 'Enter message or at least one of BUY/TARGET/STOPLOSS' : null,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _price,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Price (₹, optional, default 116)',
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _submit,
+                child: const Text('Send'),
               ),
             ),
           ],
@@ -959,6 +1233,84 @@ class _ActionTile extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
           child: _ActionBadge(action: action),
         ),
+      ),
+    );
+  }
+}
+
+class _AdviceTile extends StatelessWidget {
+  const _AdviceTile({required this.action, required this.onTap});
+
+  final _AdviceCategoryAction action;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Open compose for ${action.label}',
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: _AdviceBadge(action: action),
+        ),
+      ),
+    );
+  }
+}
+
+class _AdviceBadge extends StatelessWidget {
+  const _AdviceBadge({required this.action});
+
+  final _AdviceCategoryAction action;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SizedBox(
+      width: 90,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            height: 64,
+            width: 64,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  theme.colorScheme.primary,
+                  theme.colorScheme.secondary,
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              shape: BoxShape.circle,
+              boxShadow: const [
+                BoxShadow(
+                  color: Color.fromRGBO(139, 0, 0, 0.25),
+                  blurRadius: 14,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Icon(
+              action.icon,
+              color: theme.colorScheme.onPrimary,
+              size: 28,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            action.label.toUpperCase(),
+            textAlign: TextAlign.center,
+            style: theme.textTheme.labelMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.6,
+            ),
+          ),
+        ],
       ),
     );
   }
