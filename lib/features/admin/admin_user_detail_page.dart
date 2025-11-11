@@ -5,6 +5,7 @@ import "data/admin_models.dart";
 import "util/admin_formatters.dart";
 import "admin_calls_page.dart";
 import "admin_wallet_ledger_page.dart";
+import "widgets/admin_scaffold.dart";
 
 class AdminUserDetailPage extends StatefulWidget {
   const AdminUserDetailPage({super.key, required this.userId});
@@ -206,10 +207,8 @@ class _AdminUserDetailPageState extends State<AdminUserDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("User profile"),
-      ),
+    return AdminScaffold(
+      title: 'User profile',
       body: RefreshIndicator(
         onRefresh: _refresh,
         child: FutureBuilder<AdminUserDetail>(
@@ -259,7 +258,9 @@ class _AdminUserDetailPageState extends State<AdminUserDetailPage> {
                 const SizedBox(height: 20),
                 _buildReferralStats(detail.referralStats),
                 const SizedBox(height: 12),
-                _buildReferralCounts(detail.referralCounts),
+                _buildReferralCounts(detail.referralCounts, detail.referralTreeTotal),
+                const SizedBox(height: 12),
+                _buildReferralTree(detail.referralTree),
                 const SizedBox(height: 20),
                 _buildActions(),
                 const SizedBox(height: 24),
@@ -392,10 +393,69 @@ class _AdminUserDetailPageState extends State<AdminUserDetailPage> {
     return _StatGrid(cards: cards, title: "Referral summary");
   }
   
-  Widget _buildReferralCounts(Map<int, int> counts) {
-    if (counts.isEmpty) return const SizedBox.shrink();
+  Widget _buildReferralCounts(Map<int, int> counts, int totalFromDetail) {
+    if (counts.isEmpty && totalFromDetail <= 0) return const SizedBox.shrink();
     final theme = Theme.of(context);
     final levels = counts.keys.toList()..sort();
+    final total = totalFromDetail > 0
+        ? totalFromDetail
+        : counts.values.fold<int>(0, (a, b) => a + (b));
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  "Referral levels",
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.groups_2_outlined, size: 16),
+                      const SizedBox(width: 6),
+                      Text("Total: $total"),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (levels.isNotEmpty)
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final level in levels)
+                    Chip(
+                      avatar: const Icon(Icons.people_outline, size: 18),
+                      label: Text("L$level: ${counts[level]}"),
+                    ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReferralTree(AdminReferralTree? tree) {
+    final theme = Theme.of(context);
+    final levels = tree?.levels ?? const [];
+    final nonEmptyLevels = levels.where((l) => l.descendants.isNotEmpty).toList();
     return Card(
       elevation: 2,
       child: Padding(
@@ -404,23 +464,67 @@ class _AdminUserDetailPageState extends State<AdminUserDetailPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              "Referral levels",
+              "Referral tree",
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final level in levels)
-                  Chip(
-                    avatar: const Icon(Icons.people_outline, size: 18),
-                    label: Text("L$level: ${counts[level]}"),
-                  ),
-              ],
-            ),
+            if (tree == null || nonEmptyLevels.isEmpty)
+              const _EmptyState(message: "No downline users yet.")
+            else
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: nonEmptyLevels.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final level = nonEmptyLevels[index];
+                  return Theme(
+                    data: Theme.of(context).copyWith(
+                      dividerColor: Colors.transparent,
+                    ),
+                    child: ExpansionTile(
+                      tilePadding: const EdgeInsets.symmetric(horizontal: 8),
+                      childrenPadding: const EdgeInsets.only(left: 8, right: 8, bottom: 8),
+                      initiallyExpanded: index == 0,
+                      title: Text(
+                        "Level ${level.level} (${level.descendants.length} users)",
+                        style: theme.textTheme.titleSmall,
+                      ),
+                      children: [
+                        ListView.separated(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: level.descendants.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (context, i) {
+                            final d = level.descendants[i];
+                            final u = d.user;
+                            final display = formatUserDisplay(u);
+                            final email = (u.email ?? '').trim();
+                            final subtitle = email.isNotEmpty ? email : (u.username ?? u.phone ?? '');
+                            return ListTile(
+                              leading: CircleAvatar(
+                                radius: 16,
+                                child: Text(
+                                  (u.name ?? u.username ?? u.email ?? u.phone ?? '#')
+                                      .toString()
+                                      .trim()
+                                      .substring(0, 1)
+                                      .toUpperCase(),
+                                ),
+                              ),
+                              title: Text(display),
+                              subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
           ],
         ),
       ),

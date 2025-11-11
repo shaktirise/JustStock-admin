@@ -590,6 +590,8 @@ class AdminUserDetail {
     required this.wallet,
     required this.referralStats,
     this.referralCounts = const <int, int>{},
+    this.referralTreeTotal = 0,
+    this.referralTree,
     required this.recentCalls,
     required this.recentLedger,
     required this.referralHistory,
@@ -600,6 +602,8 @@ class AdminUserDetail {
   final AdminWalletSnapshot wallet;
   final AdminReferralStats referralStats;
   final Map<int, int> referralCounts;
+  final int referralTreeTotal;
+  final AdminReferralTree? referralTree;
   final List<AdminCallRecord> recentCalls;
   final List<AdminWalletEntry> recentLedger;
   final List<AdminReferralEntry> referralHistory;
@@ -622,6 +626,25 @@ class AdminUserDetail {
         _asMap(root["referralCounts"]) ??
             _asMap(_asMap(root["referrals"])?["counts"]),
       ),
+      // prefer explicit total, else sum counts
+      referralTreeTotal: _readInt(
+        root,
+        const ["referralTreeTotal", "referralsTotal", "totalReferrals"],
+        defaultValue: (() {
+          final map = _asMap(root["referralCounts"]) ??
+              _asMap(_asMap(root["referrals"])?["counts"]);
+          if (map == null || map.isEmpty) return 0;
+          int sum = 0;
+          map.forEach((_, value) {
+            final v = _tryParseInt(value) ?? 0;
+            sum += v;
+          });
+          return sum;
+        })(),
+      ),
+      referralTree: _asMap(root['referralTree']) != null
+          ? AdminReferralTree.fromJson(_asMap(root['referralTree'])!)
+          : null,
       recentCalls: _mapList(
         root["recentCalls"] ??
             root["purchases"] ??
@@ -812,6 +835,103 @@ class AdminReferralEntry {
         "updatedAt",
         "updated_at",
       ]),
+      metadata: Map<String, dynamic>.unmodifiable(json),
+    );
+  }
+}
+
+@immutable
+class AdminReferralTree {
+  const AdminReferralTree({
+    required this.levels,
+    this.from,
+    this.to,
+    this.depth,
+    this.usedClosure,
+    this.raw = const {},
+  });
+
+  final List<AdminReferralLevel> levels;
+  final DateTime? from;
+  final DateTime? to;
+  final int? depth;
+  final bool? usedClosure;
+  final Map<String, dynamic> raw;
+
+  factory AdminReferralTree.fromJson(Map<String, dynamic> json) {
+    final timeframe = _asMap(json['timeframe']);
+    return AdminReferralTree(
+      levels: _mapList(
+        json['levels'] ?? json['rows'] ?? json['data'],
+        AdminReferralLevel.fromJson,
+      ),
+      from: _readDateTime(timeframe ?? json, const ['from', 'start']),
+      to: _readDateTime(timeframe ?? json, const ['to', 'end']),
+      depth: _readIntOrNull(json, const ['depth', 'maxDepth']),
+      usedClosure: _readBool(json, const ['usedClosure', 'closure']),
+      raw: json,
+    );
+  }
+}
+
+@immutable
+class AdminReferralLevel {
+  const AdminReferralLevel({
+    required this.level,
+    required this.descendants,
+  });
+
+  final int level;
+  final List<AdminReferralDescendant> descendants;
+
+  factory AdminReferralLevel.fromJson(Map<String, dynamic> json) {
+    return AdminReferralLevel(
+      level: _readInt(json, const ['level', 'lvl', 'l'], defaultValue: 0),
+      descendants: _mapList(
+        json['descendants'] ?? json['users'] ?? json['members'],
+        AdminReferralDescendant.fromJson,
+      ),
+    );
+  }
+}
+
+@immutable
+class AdminReferralDescendant {
+  const AdminReferralDescendant({
+    required this.user,
+    this.pending = 0,
+    this.released = 0,
+    this.reversed = 0,
+    this.metadata = const {},
+  });
+
+  final AdminUserReference user;
+  final double pending;
+  final double released;
+  final double reversed;
+  final Map<String, dynamic> metadata;
+
+  factory AdminReferralDescendant.fromJson(Map<String, dynamic> json) {
+    final userMap = _asMap(json['user']) ?? json;
+    final earnings = _asMap(json['earnings']);
+    double readAmt(dynamic v) {
+      if (v is Map) {
+        return _tryParseDouble(v['amountRupees']) ??
+            _tryParseDouble(v['rupees']) ??
+            _tryParseDouble(v['amount']) ??
+            0;
+      }
+      return _tryParseDouble(v) ?? 0;
+    }
+    return AdminReferralDescendant(
+      user: AdminUserReference.fromJson(userMap),
+      pending: earnings != null ? readAmt(earnings['pending']) : 0,
+      released: earnings != null
+          ? readAmt(earnings['released']) + readAmt(earnings['paid'])
+          : 0,
+      reversed: earnings != null
+          ? readAmt(earnings['reversed']) + readAmt(earnings['cancelled'])
+          : 0,
       metadata: Map<String, dynamic>.unmodifiable(json),
     );
   }

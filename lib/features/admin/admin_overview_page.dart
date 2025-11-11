@@ -7,6 +7,7 @@ import "admin_calls_page.dart";
 import "admin_wallet_ledger_page.dart";
 import "admin_pending_referrals_page.dart";
 import "admin_users_page.dart";
+import "widgets/admin_scaffold.dart";
 
 class AdminOverviewPage extends StatefulWidget {
   const AdminOverviewPage({super.key});
@@ -45,10 +46,8 @@ class _AdminOverviewPageState extends State<AdminOverviewPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Admin overview"),
-      ),
+    return AdminScaffold(
+      title: 'Dashboard',
       body: RefreshIndicator(
         onRefresh: _refresh,
         child: FutureBuilder<AdminOverview>(
@@ -75,6 +74,13 @@ class _AdminOverviewPageState extends State<AdminOverviewPage> {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
               children: [
                 _buildStatsSection(context, overview.stats),
+                const SizedBox(height: 16),
+                _QuickActions(
+                  onUsers: () => _openPage(const AdminUsersPage()),
+                  onWallet: () => _openPage(const AdminWalletLedgerPage()),
+                  onReferrals: () => _openPage(const AdminPendingReferralsPage()),
+                  onCalls: () => _openPage(const AdminCallsPage()),
+                ),
                 const SizedBox(height: 24),
                 _buildSectionHeader(
                   context,
@@ -351,6 +357,75 @@ class _MetricCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _QuickActions extends StatelessWidget {
+  const _QuickActions({
+    required this.onUsers,
+    required this.onWallet,
+    required this.onReferrals,
+    required this.onCalls,
+  });
+
+  final VoidCallback onUsers;
+  final VoidCallback onWallet;
+  final VoidCallback onReferrals;
+  final VoidCallback onCalls;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [
+      _QuickActionChip(
+        label: 'Users',
+        icon: Icons.group_outlined,
+        onTap: onUsers,
+      ),
+      _QuickActionChip(
+        label: 'Wallet',
+        icon: Icons.account_balance_wallet_outlined,
+        onTap: onWallet,
+      ),
+      _QuickActionChip(
+        label: 'Referrals',
+        icon: Icons.group_add_outlined,
+        onTap: onReferrals,
+      ),
+      _QuickActionChip(
+        label: 'Calls',
+        icon: Icons.history_rounded,
+        onTap: onCalls,
+      ),
+    ];
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: items,
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickActionChip extends StatelessWidget {
+  const _QuickActionChip({required this.label, required this.icon, required this.onTap});
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ActionChip(
+      avatar: Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary),
+      label: Text(label),
+      backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.06),
+      shape: StadiumBorder(side: BorderSide(color: Theme.of(context).colorScheme.primary.withOpacity(0.20))),
+      onPressed: onTap,
     );
   }
 }

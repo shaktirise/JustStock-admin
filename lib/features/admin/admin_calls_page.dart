@@ -4,6 +4,7 @@ import "data/admin_api_service.dart";
 import "data/admin_models.dart";
 import "util/admin_formatters.dart";
 import "admin_user_detail_page.dart";
+import "widgets/admin_scaffold.dart";
 
 class AdminCallsPage extends StatefulWidget {
   const AdminCallsPage({
@@ -127,10 +128,8 @@ class _AdminCallsPageState extends State<AdminCallsPage> {
     final result = _result;
     final isEmpty = (!_isLoading && _error == null && (result?.items.isEmpty ?? true));
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Purchase calls"),
-      ),
+    return AdminScaffold(
+      title: 'Purchase calls',
       body: RefreshIndicator(
         onRefresh: () => _load(resetPage: true),
         child: ListView(

@@ -4,6 +4,7 @@ import "data/admin_api_service.dart";
 import "data/admin_models.dart";
 import "util/admin_formatters.dart";
 import "admin_user_detail_page.dart";
+import "widgets/admin_scaffold.dart";
 
 enum LedgerFilter { all, credit, debit }
 
@@ -114,10 +115,8 @@ class _AdminWalletLedgerPageState extends State<AdminWalletLedgerPage> {
     final result = _result;
     final isEmpty =
         (!_isLoading && _error == null && (result?.items.isEmpty ?? true));
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Wallet ledger"),
-      ),
+    return AdminScaffold(
+      title: 'Wallet ledger',
       body: RefreshIndicator(
         onRefresh: () => _load(resetPage: true),
         child: ListView(

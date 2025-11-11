@@ -179,17 +179,25 @@ class AdminApiService {
   }
 
   Future<AdminUserDetail> fetchUserProfile(String userId) async {
-    // Fetch basic profile + recents
+    // Fetch basic profile + recents + referral tree (depth 10, all-time)
+    final defaultFrom = DateTime.utc(1970, 1, 1);
+    final farFuture = DateTime.utc(2099, 12, 31, 23, 59, 59, 999);
     final profileResp = await _client
         .get(
-          _buildUri("/api/admin/users/$userId"),
+          _buildUri(
+            "/api/admin/users/$userId",
+            {
+              "depth": 10,
+              "from": defaultFrom,
+              "to": farFuture,
+            },
+          ),
           headers: _authHeaders(),
         )
         .timeout(_timeout);
     final profile = _handleResponse(profileResp);
 
     // Fetch wallet/referral aggregates from the summary endpoint
-    final defaultFrom = DateTime.utc(1970, 1, 1);
     final summaryResp = await _client
         .get(
           _buildUri(
@@ -264,6 +272,11 @@ class AdminApiService {
       "wallet": wallet,
       "referrals": referralsAgg,
       if (referralCounts.isNotEmpty) "referralCounts": referralCounts,
+      // expose total referral count from referralTree or counts
+      "referralTreeTotal": _computeReferralTreeTotal(
+        profile: profile,
+        counts: referralCounts,
+      ),
     };
     await _touchLastActivity();
     return AdminUserDetail.fromJson(merged);
@@ -488,4 +501,41 @@ Map<String, dynamic> _extractReferralCounts(Map<String, dynamic> summary) {
     }
   }
   return countsMap ?? const <String, dynamic>{};
+}
+
+int _computeReferralTreeTotal({
+  required Map<String, dynamic> profile,
+  required Map<String, dynamic> counts,
+}) {
+  // Prefer server-provided referralTree in the profile payload
+  final tree = profile["referralTree"];
+  if (tree is Map) {
+    final levels = tree["levels"];
+    if (levels is List) {
+      int total = 0;
+      for (final lvl in levels) {
+        if (lvl is Map) {
+          final descendants = lvl["descendants"];
+          if (descendants is List) {
+            total += descendants.length;
+          }
+        }
+      }
+      if (total > 0) return total;
+    }
+  }
+  // Fallback to summing counts per level if present
+  if (counts.isNotEmpty) {
+    int total = 0;
+    for (final value in counts.values) {
+      if (value is num) {
+        total += value.toInt();
+      } else if (value is String) {
+        final v = int.tryParse(value);
+        if (v != null) total += v;
+      }
+    }
+    return total;
+  }
+  return 0;
 }

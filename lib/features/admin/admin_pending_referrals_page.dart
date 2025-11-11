@@ -4,6 +4,7 @@ import "data/admin_api_service.dart";
 import "data/admin_models.dart";
 import "util/admin_formatters.dart";
 import "admin_user_detail_page.dart";
+import "widgets/admin_scaffold.dart";
 
 class AdminPendingReferralsPage extends StatefulWidget {
   const AdminPendingReferralsPage({super.key});
@@ -117,10 +118,8 @@ class _AdminPendingReferralsPageState
     final result = _result;
     final isEmpty =
         (!_isLoading && _error == null && (result?.items.isEmpty ?? true));
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Pending referrals"),
-      ),
+    return AdminScaffold(
+      title: 'Pending referrals',
       body: RefreshIndicator(
         onRefresh: () => _load(resetPage: true),
         child: ListView(

@@ -38,7 +38,7 @@ ThemeData buildAppTheme() {
       iconTheme: const IconThemeData(color: Colors.white),
       // allow gradient via flexibleSpace on pages
     ),
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       elevation: 1.5,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       surfaceTintColor: Colors.white,
