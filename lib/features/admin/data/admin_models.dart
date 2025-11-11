@@ -841,6 +841,156 @@ class AdminReferralEntry {
 }
 
 @immutable
+class AdminWithdrawalRequest {
+  const AdminWithdrawalRequest({
+    required this.id,
+    required this.amount,
+    required this.status,
+    required this.method,
+    this.user,
+    this.upiId,
+    this.bankAccountName,
+    this.bankAccountNumber,
+    this.bankIfsc,
+    this.bankName,
+    this.contactName,
+    this.contactMobile,
+    this.note,
+    this.createdAt,
+    this.updatedAt,
+    this.metadata = const {},
+  });
+
+  final String id;
+  final double amount;
+  final String status;
+  final String method; // e.g., UPI or BANK
+  final AdminUserReference? user;
+  final String? upiId;
+  final String? bankAccountName;
+  final String? bankAccountNumber;
+  final String? bankIfsc;
+  final String? bankName;
+  final String? contactName;
+  final String? contactMobile;
+  final String? note;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+  final Map<String, dynamic> metadata;
+
+  factory AdminWithdrawalRequest.fromJson(Map<String, dynamic> json) {
+    final userSource =
+        _asMap(json["user"]) ?? _asMap(json["owner"]) ?? _asMap(json["applicant"]);
+    final bankMap = _asMap(json['bank']);
+    final contactMap = _asMap(json['contact']);
+    final amountRupees = _readDoubleOrNull(json, const [
+      'amountInRupees',
+      'amountRupees',
+      'rupees',
+    ]);
+    final amountPaise = _readDoubleOrNull(json, const [
+      'amountPaise',
+      'paise',
+    ]);
+    final rawAmount = amountRupees ??
+        (amountPaise != null ? amountPaise / 100 : null) ??
+        _readDoubleOrNull(json, const [
+          'amount',
+          'value',
+        ]);
+
+    return AdminWithdrawalRequest(
+      id: _readString(json, const [
+        'id',
+        '_id',
+        'requestId',
+        'withdrawalId',
+      ]),
+      amount: rawAmount ?? 0,
+      status: _readString(json, const [
+        'status',
+        'state',
+      ]),
+      method: _readString(json, const [
+        'method',
+        'withdrawMethod',
+      ]),
+      user: userSource != null ? AdminUserReference.fromJson(userSource) : null,
+      upiId: _readStringOrNull(json, const [
+        'upiId',
+        'vpa',
+        'upi',
+      ]),
+      bankAccountName: _readStringOrNull(json, const [
+            'bankAccountName',
+            'accountName',
+            'beneficiaryName',
+          ]) ?? _readStringOrNull(bankMap ?? const {}, const [
+            'accountName',
+            'name',
+            'beneficiaryName',
+          ]),
+      bankAccountNumber: _readStringOrNull(json, const [
+            'bankAccountNumber',
+            'accountNumber',
+            'acctNo',
+          ]) ?? _readStringOrNull(bankMap ?? const {}, const [
+            'accountNumber',
+            'number',
+            'acctNo',
+          ]),
+      bankIfsc: _readStringOrNull(json, const [
+            'bankIfsc',
+            'ifsc',
+          ]) ?? _readStringOrNull(bankMap ?? const {}, const [
+            'ifsc',
+          ]),
+      bankName: _readStringOrNull(json, const [
+            'bankName',
+            'bank',
+          ]) ?? _readStringOrNull(bankMap ?? const {}, const [
+            'bankName',
+            'bank',
+          ]),
+      contactName: _readStringOrNull(json, const [
+            'contactName',
+            'name',
+            'contact',
+          ]) ?? _readStringOrNull(contactMap ?? const {}, const [
+            'name',
+            'contactName',
+          ]),
+      contactMobile: _readStringOrNull(json, const [
+            'contactMobile',
+            'mobile',
+            'phone',
+          ]) ?? _readStringOrNull(contactMap ?? const {}, const [
+            'mobile',
+            'phone',
+          ]),
+      note: _readStringOrNull(json, const [
+        'note',
+        'reason',
+        'description',
+      ]),
+      createdAt: _readDateTime(json, const [
+        'createdAt',
+        'created_at',
+        'requestedAt',
+        'timestamp',
+      ]),
+      updatedAt: _readDateTime(json, const [
+        'updatedAt',
+        'processedAt',
+        'updated_at',
+      ]),
+      metadata: Map<String, dynamic>.unmodifiable(json),
+    );
+  }
+}
+
+
+@immutable
 class AdminReferralTree {
   const AdminReferralTree({
     required this.levels,

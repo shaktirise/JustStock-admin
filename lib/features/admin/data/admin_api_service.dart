@@ -344,6 +344,120 @@ class AdminApiService {
     );
   }
 
+  Future<PaginatedResult<AdminWithdrawalRequest>> fetchReferralWithdrawals({
+    int page = 1,
+    int limit = 20,
+    String status = 'pending',
+    String? userId,
+  }) async {
+    final response = await _client
+        .get(
+          _buildUri(
+            "/api/admin/referrals/withdrawals",
+            {
+              "page": page,
+              // include both for compatibility
+              "limit": limit,
+              "pageSize": limit,
+              if (userId != null && userId.isNotEmpty) "userId": userId,
+              if (status.isNotEmpty) "status": status,
+            },
+          ),
+          headers: _authHeaders(),
+        )
+        .timeout(_timeout);
+    final body = _handleResponse(response);
+    await _touchLastActivity();
+    return buildPaginatedResult(
+      body,
+      AdminWithdrawalRequest.fromJson,
+    );
+  }
+
+  Future<void> markReferralWithdrawalPaid({
+    required String requestId,
+    required String paymentRef,
+    String? adminNote,
+    bool settleFullPending = false,
+  }) async {
+    final payload = <String, dynamic>{
+      "status": "paid",
+      "paymentRef": paymentRef,
+      if (settleFullPending) "settleFullPending": true,
+      if (adminNote != null && adminNote.trim().isNotEmpty)
+        "adminNote": adminNote.trim(),
+    };
+    final response = await _client
+        .patch(
+          _buildUri("/api/admin/referrals/withdrawals/$requestId"),
+          headers: _authHeaders(const {"Content-Type": "application/json"}),
+          body: jsonEncode(payload),
+        )
+        .timeout(_timeout);
+    _handleResponse(response);
+    await _touchLastActivity();
+  }
+
+  Future<PaginatedResult<AdminWithdrawalRequest>> fetchWalletWithdrawals({
+    int page = 1,
+    int limit = 20,
+    String status = 'pending',
+    String? userId,
+  }) async {
+    final response = await _client
+        .get(
+          _buildUri(
+            "/api/wallet/withdrawals/all",
+            {
+              "page": page,
+              "limit": limit,
+              if (userId != null && userId.isNotEmpty) "userId": userId,
+              if (status.isNotEmpty) "status": status,
+            },
+          ),
+          headers: _authHeaders(),
+        )
+        .timeout(_timeout);
+    final body = _handleResponse(response);
+    await _touchLastActivity();
+    return buildPaginatedResult(
+      body,
+      AdminWithdrawalRequest.fromJson,
+    );
+  }
+
+  Future<void> markWalletWithdrawalPaid({
+    required String id,
+    required String paymentRef,
+    bool settleFullBalance = true,
+  }) async {
+    final response = await _client
+        .patch(
+          _buildUri("/api/wallet/withdrawals/$id/mark-paid"),
+          headers: _authHeaders(const {"Content-Type": "application/json"}),
+          body: jsonEncode({
+            "paymentRef": paymentRef,
+            "settleFullBalance": settleFullBalance,
+          }),
+        )
+        .timeout(_timeout);
+    _handleResponse(response);
+    await _touchLastActivity();
+  }
+
+  Future<void> cancelWalletWithdrawal({
+    required String id,
+  }) async {
+    final response = await _client
+        .patch(
+          _buildUri("/api/wallet/withdrawals/$id/cancel"),
+          headers: _authHeaders(),
+        )
+        .timeout(_timeout);
+    _handleResponse(response);
+    await _touchLastActivity();
+  }
+
   Future<void> resetUserPassword({
     required String userId,
     required String newPassword,

@@ -15,6 +15,7 @@ import "package:juststockadmin/features/admin/admin_overview_page.dart";
 import "package:juststockadmin/features/admin/admin_pending_referrals_page.dart";
 import "package:juststockadmin/features/admin/admin_users_page.dart";
 import "package:juststockadmin/features/admin/admin_wallet_ledger_page.dart";
+import "package:juststockadmin/features/admin/admin_withdraw_requests_page.dart";
 import "package:juststockadmin/features/profile/profile_page.dart";
 // Removed dummy MLM Levels tool
 
@@ -668,6 +669,11 @@ class _HomePageState extends State<HomePage> {
                     label: 'Referrals',
                     onTap: () =>
                         _openAdminPage(const AdminPendingReferralsPage()),
+                  ),
+                  _AdminShortcutTile(
+                    icon: Icons.payments_outlined,
+                    label: 'Withdraw requests',
+                    onTap: () => _openAdminPage(const AdminWithdrawRequestsPage()),
                   ),
                 ];
 
