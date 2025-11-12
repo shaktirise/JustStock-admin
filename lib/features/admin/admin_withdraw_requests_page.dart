@@ -4,6 +4,7 @@ import "data/admin_api_service.dart";
 import "data/admin_models.dart";
 import "util/admin_formatters.dart";
 import "admin_user_detail_page.dart";
+import "admin_withdraw_detail_page.dart";
 import "widgets/admin_scaffold.dart";
 
 class AdminWithdrawRequestsPage extends StatelessWidget {
@@ -349,7 +350,20 @@ class _ReferralWithdrawalsTabState extends State<_ReferralWithdrawalsTab> {
                 ),
               ],
             ),
-            onTap: () => _showWithdrawalDetails(req),
+            onTap: () async {
+              final updated = await Navigator.of(context).push<bool>(
+                MaterialPageRoute(
+                  builder: (_) => AdminWithdrawalDetailPage(
+                    request: req,
+                    isReferral: true,
+                  ),
+                ),
+              );
+              if (updated == true) {
+                if (!mounted) return;
+                await _load(resetPage: true);
+              }
+            },
             onLongPress: req.user?.id == null
                 ? null
                 : () => Navigator.of(context).push(

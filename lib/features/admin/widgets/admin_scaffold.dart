@@ -9,12 +9,14 @@ class AdminScaffold extends StatelessWidget {
     required this.body,
     this.actions,
     this.floatingActionButton,
+    this.bottomBar,
   });
 
   final String title;
   final Widget body;
   final List<Widget>? actions;
   final Widget? floatingActionButton;
+  final Widget? bottomBar;
 
   @override
   Widget build(BuildContext context) {
@@ -28,6 +30,7 @@ class AdminScaffold extends StatelessWidget {
       ),
       body: body,
       floatingActionButton: floatingActionButton,
+      bottomNavigationBar: bottomBar,
     );
   }
 }
@@ -96,4 +99,3 @@ class SectionHeader extends StatelessWidget {
     );
   }
 }
-
