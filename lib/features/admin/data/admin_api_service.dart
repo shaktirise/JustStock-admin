@@ -1,8 +1,10 @@
 import "dart:convert";
+import "dart:typed_data";
 
 import "package:http/http.dart" as http;
 
 import "../../../core/auth_session.dart";
+import "../../../core/api_config.dart";
 import "../../../core/http_client.dart" as http_client;
 import "../../../core/session_store.dart";
 import "admin_models.dart";
@@ -18,7 +20,7 @@ class AdminApiService {
         _timeout = timeout;
 
   static const String _defaultBaseUrl =
-      "https://backend-server-11f5.onrender.com";
+      AdminApiConfig.apiBaseUrl;
 
   final http.Client _client;
   final bool _ownsClient;
@@ -36,7 +38,7 @@ class AdminApiService {
     final response = await _client
         .get(
           _buildUri(
-            "/api/admin/dashboard/overview",
+            "/admin/dashboard/overview",
             {
               "from": from ?? defaultFrom,
               if (to != null) "to": to,
@@ -62,7 +64,7 @@ class AdminApiService {
     final response = await _client
         .get(
           _buildUri(
-            "/api/admin/dashboard/calls",
+            "/admin/dashboard/calls",
             {
               "page": page,
               "limit": limit,
@@ -95,7 +97,7 @@ class AdminApiService {
     final response = await _client
         .get(
           _buildUri(
-            "/api/admin/wallet-ledger",
+            "/admin/wallet-ledger",
             {
               "page": page,
               // API expects pageSize
@@ -117,6 +119,38 @@ class AdminApiService {
     );
   }
 
+  Future<Uint8List> exportWalletWithdrawalsCsv({
+    String? status,
+    String? userId,
+  }) async {
+    final response = await _client
+        .get(
+          _buildUri(
+            "/wallet/withdrawals/export.csv",
+            {
+              if (status != null && status.isNotEmpty) "status": status,
+              if (userId != null && userId.isNotEmpty) "userId": userId,
+            },
+          ),
+          headers: _authHeaders(const {"Accept": "text/csv, */*"}),
+        )
+        .timeout(_timeout);
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      await _touchLastActivity();
+      return response.bodyBytes;
+    }
+
+    final parsed = _parseJson(response.body);
+    final message = _extractMessage(parsed) ??
+        "CSV export failed (HTTP ${response.statusCode}).";
+    throw ApiException(
+      message,
+      statusCode: response.statusCode,
+      details: parsed,
+    );
+  }
+
   Future<PaginatedResult<AdminReferralEntry>> fetchPendingReferrals({
     int page = 1,
     int limit = 20,
@@ -129,7 +163,7 @@ class AdminApiService {
     final response = await _client
         .get(
           _buildUri(
-            "/api/admin/commissions",
+            "/admin/commissions",
             {
               "page": page,
               "pageSize": limit,
@@ -159,7 +193,7 @@ class AdminApiService {
     final response = await _client
         .get(
           _buildUri(
-            "/api/admin/users",
+            "/admin/users",
             {
               "page": page,
               "limit": limit,
@@ -185,7 +219,7 @@ class AdminApiService {
     final profileResp = await _client
         .get(
           _buildUri(
-            "/api/admin/users/$userId",
+            "/admin/users/$userId",
             {
               "depth": 10,
               "from": defaultFrom,
@@ -201,7 +235,7 @@ class AdminApiService {
     final summaryResp = await _client
         .get(
           _buildUri(
-            "/api/admin/users/$userId/summary",
+            "/admin/users/$userId/summary",
             {
               "from": defaultFrom,
               // keep 'to' empty for open-ended; server uses now
@@ -294,7 +328,7 @@ class AdminApiService {
     final response = await _client
         .get(
           _buildUri(
-            "/api/admin/users/$userId/wallet-ledger",
+            "/admin/users/$userId/wallet-ledger",
             {
               "page": page,
               "pageSize": limit,
@@ -324,7 +358,7 @@ class AdminApiService {
     final response = await _client
         .get(
           _buildUri(
-            "/api/admin/commissions",
+            "/admin/commissions",
             {
               "page": page,
               "pageSize": limit,
@@ -353,7 +387,7 @@ class AdminApiService {
     final response = await _client
         .get(
           _buildUri(
-            "/api/admin/referrals/withdrawals",
+            "/admin/referrals/withdrawals",
             {
               "page": page,
               // include both for compatibility
@@ -389,7 +423,7 @@ class AdminApiService {
     };
     final response = await _client
         .patch(
-          _buildUri("/api/admin/referrals/withdrawals/$requestId"),
+          _buildUri("/admin/referrals/withdrawals/$requestId"),
           headers: _authHeaders(const {"Content-Type": "application/json"}),
           body: jsonEncode(payload),
         )
@@ -407,7 +441,7 @@ class AdminApiService {
     final response = await _client
         .get(
           _buildUri(
-            "/api/wallet/withdrawals/all",
+            "/wallet/withdrawals/all",
             {
               "page": page,
               "limit": limit,
@@ -433,7 +467,7 @@ class AdminApiService {
   }) async {
     final response = await _client
         .patch(
-          _buildUri("/api/wallet/withdrawals/$id/mark-paid"),
+          _buildUri("/wallet/withdrawals/$id/mark-paid"),
           headers: _authHeaders(const {"Content-Type": "application/json"}),
           body: jsonEncode({
             "paymentRef": paymentRef,
@@ -450,7 +484,7 @@ class AdminApiService {
   }) async {
     final response = await _client
         .patch(
-          _buildUri("/api/wallet/withdrawals/$id/cancel"),
+          _buildUri("/wallet/withdrawals/$id/cancel"),
           headers: _authHeaders(),
         )
         .timeout(_timeout);
@@ -464,7 +498,7 @@ class AdminApiService {
   }) async {
     final response = await _client
         .patch(
-          _buildUri("/api/admin/users/$userId/password"),
+          _buildUri("/admin/users/$userId/password"),
           headers: _authHeaders(const {"Content-Type": "application/json"}),
           body: jsonEncode({"newPassword": newPassword}),
         )
@@ -483,7 +517,7 @@ class AdminApiService {
         normalized == "paid" ? "RELEASED" : (normalized == "cancelled" ? "REVERSED" : status);
     final response = await _client
         .patch(
-          _buildUri("/api/admin/commissions/$entryId"),
+          _buildUri("/admin/commissions/$entryId"),
           headers: _authHeaders(const {"Content-Type": "application/json"}),
           body: jsonEncode({"status": serverStatus}),
         )
@@ -504,7 +538,18 @@ class AdminApiService {
     String path, [
     Map<String, dynamic>? queryParameters,
   ]) {
-    final normalizedPath = path.startsWith("/") ? path : "/$path";
+    var normalizedPath = path.startsWith("/") ? path : "/$path";
+
+    final baseHasApiSuffix = baseUrl.endsWith("/api");
+    final pathHasApiPrefix = normalizedPath.startsWith("/");
+
+    // Avoid double or missing /api when base already ends with /api
+    if (baseHasApiSuffix && pathHasApiPrefix) {
+      normalizedPath = normalizedPath.substring(4); // drop leading "/api"
+    } else if (!baseHasApiSuffix && !pathHasApiPrefix) {
+      normalizedPath = "/api$normalizedPath";
+    }
+
     final uri = Uri.parse("$baseUrl$normalizedPath");
     if (queryParameters == null || queryParameters.isEmpty) {
       return uri;

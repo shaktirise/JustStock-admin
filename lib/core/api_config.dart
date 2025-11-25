@@ -1,7 +1,7 @@
 class AdminApiConfig {
   static const String apiBaseUrl = String.fromEnvironment(
     'ADMIN_API_BASE_URL',
-    defaultValue: 'https://backend-server-11f5.onrender.com',
+    defaultValue: 'https://backend-server-11f5.onrender.com/api',
   );
 
   static String get _baseWithoutSlash => apiBaseUrl.endsWith('/')
@@ -9,7 +9,14 @@ class AdminApiConfig {
       : apiBaseUrl;
 
   static Uri buildUri(String path, [Map<String, dynamic>? query]) {
-    final normalizedPath = path.startsWith('/') ? path : '/$path';
+    var normalizedPath = path.startsWith('/') ? path : '/$path';
+    final baseHasApi = _baseWithoutSlash.endsWith('/api');
+    final pathHasApi = normalizedPath.startsWith('/api/');
+    if (baseHasApi && pathHasApi) {
+      normalizedPath = normalizedPath.substring(4); // drop "/api"
+    } else if (!baseHasApi && !pathHasApi) {
+      normalizedPath = '/api$normalizedPath';
+    }
     final uri = Uri.parse('$_baseWithoutSlash$normalizedPath');
     if (query == null || query.isEmpty) return uri;
     final qp = <String, String>{};
