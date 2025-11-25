@@ -151,6 +151,39 @@ class AdminApiService {
     );
   }
 
+  Future<Uint8List> exportReferralWithdrawalsCsv({
+    String? status,
+    String? userId,
+  }) async {
+    final response = await _client
+        .get(
+          _buildUri(
+            "/admin/referrals/withdrawals/export.csv",
+            {
+              if (status != null && status.isNotEmpty && status.toLowerCase() != "all")
+                "status": status,
+              if (userId != null && userId.isNotEmpty) "userId": userId,
+            },
+          ),
+          headers: _authHeaders(const {"Accept": "text/csv, */*"}),
+        )
+        .timeout(_timeout);
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      await _touchLastActivity();
+      return response.bodyBytes;
+    }
+
+    final parsed = _parseJson(response.body);
+    final message = _extractMessage(parsed) ??
+        "CSV export failed (HTTP ${response.statusCode}).";
+    throw ApiException(
+      message,
+      statusCode: response.statusCode,
+      details: parsed,
+    );
+  }
+
   Future<PaginatedResult<AdminReferralEntry>> fetchPendingReferrals({
     int page = 1,
     int limit = 20,
@@ -541,7 +574,7 @@ class AdminApiService {
     var normalizedPath = path.startsWith("/") ? path : "/$path";
 
     final baseHasApiSuffix = baseUrl.endsWith("/api");
-    final pathHasApiPrefix = normalizedPath.startsWith("/");
+    final pathHasApiPrefix = normalizedPath.startsWith("/api");
 
     // Avoid double or missing /api when base already ends with /api
     if (baseHasApiSuffix && pathHasApiPrefix) {

@@ -16,25 +16,31 @@ class AdminWithdrawRequestsPage extends StatefulWidget {
 }
 
 class _AdminWithdrawRequestsPageState extends State<AdminWithdrawRequestsPage> {
+  final _referralKey = GlobalKey<_ReferralWithdrawalsTabState>();
   final _walletKey = GlobalKey<_WalletWithdrawalsTabState>();
 
   Future<void> _handleDownloadCsv(BuildContext context) async {
     final controller = DefaultTabController.of(context);
     final isWalletTab = controller?.index == 1;
-    if (!isWalletTab) {
+    if (isWalletTab == true) {
+      final walletState = _walletKey.currentState;
+      if (walletState == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Wallet tab is still loading.')),
+        );
+        return;
+      }
+      await walletState.exportCsv();
+      return;
+    }
+    final referralState = _referralKey.currentState;
+    if (referralState == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Switch to Wallet tab to download CSV.')),
+        const SnackBar(content: Text('Referral tab is still loading.')),
       );
       return;
     }
-    final walletState = _walletKey.currentState;
-    if (walletState == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Wallet tab is still loading.')),
-      );
-      return;
-    }
-    await walletState.exportCsv();
+    await referralState.exportCsv();
   }
 
   @override
@@ -70,7 +76,7 @@ class _AdminWithdrawRequestsPageState extends State<AdminWithdrawRequestsPage> {
             ],
             body: TabBarView(
               children: [
-                const _ReferralWithdrawalsTab(),
+                _ReferralWithdrawalsTab(key: _referralKey),
                 _WalletWithdrawalsTab(key: _walletKey),
               ],
             ),
@@ -101,6 +107,7 @@ class _ReferralWithdrawalsTabState extends State<_ReferralWithdrawalsTab> {
   int _page = 1;
   int _limit = 20;
   bool _isLoading = false;
+  bool _isExporting = false;
   String? _error;
   PaginatedResult<AdminWithdrawalRequest>? _result;
 
@@ -153,6 +160,61 @@ class _ReferralWithdrawalsTabState extends State<_ReferralWithdrawalsTab> {
     if (newPage == _page) return;
     setState(() => _page = newPage);
     _load(resetPage: false);
+  }
+
+  Future<void> exportCsv() async {
+    if (_isExporting) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context, rootNavigator: true);
+
+    setState(() => _isExporting = true);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final filters = (
+        status: _status.trim().isEmpty ? null : _status.trim(),
+        userId: _userIdController.text.trim().isEmpty
+            ? null
+            : _userIdController.text.trim(),
+      );
+
+      final bytes = await _service.exportReferralWithdrawalsCsv(
+        status: filters.status,
+        userId: filters.userId,
+      );
+
+      final fileName = _buildCsvFileName(filters.status);
+      final savePath = await saveCsvBytes(
+        bytes: bytes,
+        fileName: fileName,
+      );
+
+      if (navigator.canPop()) navigator.pop();
+
+      if (savePath == null) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Download cancelled.')),
+        );
+        return;
+      }
+
+      messenger.showSnackBar(
+        SnackBar(content: Text('Saved to $savePath')),
+      );
+    } catch (e) {
+      if (navigator.canPop()) navigator.pop();
+      messenger.showSnackBar(
+        SnackBar(content: Text('Export failed: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isExporting = false);
+      }
+    }
   }
 
   Future<void> _markPaid(AdminWithdrawalRequest req) async {
@@ -333,6 +395,21 @@ class _ReferralWithdrawalsTabState extends State<_ReferralWithdrawalsTab> {
                 ),
               ],
             ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                onPressed: _isExporting ? null : exportCsv,
+                icon: _isExporting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.download_rounded),
+                label: Text(_isExporting ? 'Preparing...' : 'Download CSV'),
+              ),
+            ),
           ],
         ),
       ),
@@ -440,6 +517,15 @@ class _ReferralWithdrawalsTabState extends State<_ReferralWithdrawalsTab> {
     final ifsc = req.bankIfsc ?? '-';
     final bank = req.bankName ?? 'BANK';
     return 'BANK: $bank $masked IFSC $ifsc';
+  }
+
+  String _buildCsvFileName(String? status) {
+    final now = DateTime.now();
+    String two(int v) => v.toString().padLeft(2, '0');
+    final ts =
+        "${now.year}${two(now.month)}${two(now.day)}_${two(now.hour)}${two(now.minute)}${two(now.second)}";
+    final suffix = (status == null || status.isEmpty) ? "all" : status.toLowerCase();
+    return "referral_withdrawals_${suffix}_$ts.csv";
   }
 
   Future<void> _showWithdrawalDetails(AdminWithdrawalRequest req) async {

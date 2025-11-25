@@ -8,6 +8,7 @@ class AdminScaffold extends StatelessWidget {
     required this.title,
     required this.body,
     this.actions,
+    this.appBarBottom,
     this.floatingActionButton,
     this.bottomBar,
   });
@@ -15,6 +16,7 @@ class AdminScaffold extends StatelessWidget {
   final String title;
   final Widget body;
   final List<Widget>? actions;
+  final PreferredSizeWidget? appBarBottom;
   final Widget? floatingActionButton;
   final Widget? bottomBar;
 
@@ -27,6 +29,7 @@ class AdminScaffold extends StatelessWidget {
           decoration: BoxDecoration(gradient: buildHeaderGradient()),
         ),
         actions: actions,
+        bottom: appBarBottom,
       ),
       body: body,
       floatingActionButton: floatingActionButton,
