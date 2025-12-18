@@ -68,6 +68,14 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  static const Set<String> _segmentNotificationKeys = {
+    'stocks',
+    'nifty',
+    'banknifty',
+    'sensex',
+    'commodity',
+  };
+
   void _openProfile() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -360,6 +368,7 @@ class _HomePageState extends State<HomePage> {
     required String endpoint,
     required String message,
   }) async {
+    final normalizedEndpoint = endpoint.toLowerCase();
     final uri = Uri.parse(
       'https://backend-server-11f5.onrender.com/api/segments/$endpoint',
     );
@@ -383,13 +392,25 @@ class _HomePageState extends State<HomePage> {
                 ? 'Message sent successfully.'
                 : 'Unable to send message.');
 
+        var finalMessage = serverMessage;
         if (success) {
           try {
             await SessionStore.touchLastActivityNow();
           } catch (_) {}
+          if (_segmentNotificationKeys.contains(normalizedEndpoint)) {
+            final pushOutcome = await _triggerSegmentNotification(
+              client: client,
+              segmentKey: normalizedEndpoint,
+              message: message,
+            );
+            finalMessage = _mergeSegmentMessages(
+              baseMessage: serverMessage,
+              pushOutcome: pushOutcome,
+            );
+          }
         }
 
-        return (success: success, message: serverMessage);
+        return (success: success, message: finalMessage);
       } finally {
         try {
           client.close();
@@ -399,6 +420,99 @@ class _HomePageState extends State<HomePage> {
       debugPrint('Failed to send segment message ($endpoint): $error');
       debugPrint('$stackTrace');
       return (success: false, message: 'Network error. Please try again.');
+    }
+  }
+
+  String _mergeSegmentMessages({
+    required String baseMessage,
+    required ({bool success, String message}) pushOutcome,
+  }) {
+    final trimmed = pushOutcome.message.trim();
+    if (pushOutcome.success) {
+      if (trimmed.isEmpty) {
+        return '$baseMessage Notification sent.';
+      }
+      return '$baseMessage $trimmed';
+    }
+    final failureMessage =
+        trimmed.isEmpty ? 'Push notification failed.' : trimmed;
+    return '$baseMessage (push: $failureMessage)';
+  }
+
+  Future<({bool success, String message})> _triggerSegmentNotification({
+    required http.Client client,
+    required String segmentKey,
+    required String message,
+  }) async {
+    final uri = Uri.parse(
+      'https://backend-server-11f5.onrender.com/api/notifications/segment/$segmentKey',
+    );
+    final trimmedMessage = message.trim();
+    final segmentLabel = _segmentLabelForKey(segmentKey);
+    final payload = {
+      'title': _segmentNotificationTitle(segmentLabel),
+      'body': trimmedMessage.isEmpty
+          ? 'Update for $segmentLabel'
+          : trimmedMessage,
+      'data': {
+        'type': 'segment_update',
+        'segment': segmentKey,
+        'segmentLabel': segmentLabel,
+        'message': trimmedMessage,
+        'timestamp': DateTime.now().toUtc().toIso8601String(),
+      },
+    };
+
+    try {
+      final response = await client.post(
+        uri,
+        headers: AuthSession.withAuth({'Content-Type': 'application/json'}),
+        body: jsonEncode(payload),
+      );
+      final decoded = _parseResponse(response.body);
+      final success =
+          decoded.success ??
+          (response.statusCode >= 200 && response.statusCode < 300);
+      final serverMessage =
+          decoded.message ??
+          (success ? 'Notification sent.' : 'Push notification failed.');
+      return (success: success, message: serverMessage);
+    } catch (error, stackTrace) {
+      debugPrint(
+          'Failed to trigger segment notification ($segmentKey): $error');
+      debugPrint('$stackTrace');
+      return (success: false, message: 'Push notification failed.');
+    }
+  }
+
+  String _segmentNotificationTitle(String segmentLabel) {
+    final trimmed = segmentLabel.trim();
+    if (trimmed.isEmpty) {
+      return 'Segment Alert';
+    }
+    return '$trimmed Alert';
+  }
+
+  String _segmentLabelForKey(String segmentKey) {
+    switch (segmentKey.toLowerCase()) {
+      case 'stocks':
+        return 'Stocks';
+      case 'nifty':
+        return 'Nifty';
+      case 'banknifty':
+        return 'BankNifty';
+      case 'sensex':
+        return 'Sensex';
+      case 'commodity':
+        return 'Commodity';
+      default:
+        if (segmentKey.isEmpty) {
+          return 'Segment';
+        }
+        if (segmentKey.length == 1) {
+          return segmentKey.toUpperCase();
+        }
+        return segmentKey[0].toUpperCase() + segmentKey.substring(1);
     }
   }
 
